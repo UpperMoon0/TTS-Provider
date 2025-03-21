@@ -33,8 +33,9 @@ wheels/
 # Environment variables
 .env
 
-# Output directory
+# Output and model directories
 outputs/
+models/
 
 # Jupyter Notebooks
 .ipynb_checkpoints
