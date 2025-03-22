@@ -7,8 +7,9 @@ import torchaudio
 from dotenv import load_dotenv
 from huggingface_hub import HfFolder, snapshot_download
 
-from csm.generator import load_csm_1b  # Make sure this import is present
-from csm.watermarking import watermark, load_watermarker
+from csm.generator import load_csm_1b
+# Import the entire watermarking module to avoid name resolution issues
+import csm.watermarking
 
 # Load environment variables from .env file
 load_dotenv()
@@ -76,12 +77,18 @@ class TTSGenerator:
                 else:
                     self.logger.warning("HF_HOME not set in environment variables")
                 
+                # Use the fully qualified path to the function to prevent name resolution issues
+                self.logger.info(f"Initializing watermarker on {self.device}...")
+                watermarker = csm.watermarking.load_watermarker(device=self.device)
+                
                 # Load model with just the device parameter
                 TTSGenerator._generator = load_csm_1b(device=self.device)
                 TTSGenerator._sample_rate = TTSGenerator._generator.sample_rate
                 self.logger.info("Model loaded successfully.")
             except Exception as e:
                 self.logger.error(f"Error loading model: {e}")
+                import traceback
+                self.logger.error(f"Stack trace: {traceback.format_exc()}")
                 return False
         else:
             self.logger.info("Reusing already loaded model.")
