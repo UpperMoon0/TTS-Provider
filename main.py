@@ -33,7 +33,8 @@ else:
 # Default values without environment variables
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "outputs")
-MAX_AUDIO_LENGTH_MS = 10000
+# Increase maximum audio length to accommodate longer text
+MAX_AUDIO_LENGTH_MS = 30000  # Changed from 10000 to 30000 for longer speech
 
 # Create output directory
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -53,15 +54,15 @@ def main():
         generator = load_csm_1b(device=DEVICE)
         logger.info("Model loaded successfully")
         
-        # Define text to generate
-        text = "Hello from Sesame. This is a text to speech demo using CSM-1B."
+        # Define longer text to generate with a more complex paragraph
+        text = "Welcome to the world of neural text-to-speech synthesis. Modern AI models can now generate incredibly natural-sounding voices that closely mimic human speech patterns. This technology has applications in audiobooks, virtual assistants, accessibility tools, and much more. The voices can convey emotion, emphasis, and natural pacing that makes the listening experience pleasant and engaging."
         logger.info(f"Generating speech for text: '{text}'")
         
-        # Generate audio
-        logger.info("Starting audio generation...")
+        # Generate audio with female voice (speaker=1 instead of 0)
+        logger.info("Starting audio generation with female voice...")
         audio = generator.generate(
             text=text,
-            speaker=0,
+            speaker=1,  # Changed from 0 to 1 for female voice
             context=[],
             max_audio_length_ms=MAX_AUDIO_LENGTH_MS,
         )
