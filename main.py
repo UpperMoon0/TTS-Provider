@@ -1,13 +1,10 @@
 import os
 import sys
-import torch
-import torchaudio
 import logging
 import argparse
 import asyncio
 import json
 import websockets
-from pathlib import Path
 from dotenv import load_dotenv
 from tts_generator import TTSGenerator
 
@@ -22,15 +19,6 @@ def setup_logging():
     )
     return logging.getLogger("TTS-Service")
 
-def verify_setup():
-    """Verify that the required files and directories exist"""
-    csm_path = os.path.join(os.path.dirname(__file__), 'csm')
-    if not os.path.exists(csm_path):
-        print("Error: CSM repository not found. Please clone it first:")
-        print("git clone https://github.com/SesameAILabs/csm.git")
-        return False
-    return True
-
 class TTSServer:
     """WebSocket server for TTS service using CSM-1B model."""
     
@@ -42,16 +30,8 @@ class TTSServer:
         # Load environment variables
         load_dotenv()
         
-        # Get HF settings from environment
-        self.hf_home = os.getenv("HF_HOME", "D:/Dev/Models/huggingface")
-        self.hf_token = os.getenv("HF_TOKEN")
-        
-        # Initialize TTS Generator
-        self.tts_generator = TTSGenerator(
-            hf_home=self.hf_home,
-            hf_token=self.hf_token,
-            max_audio_length_ms=30000
-        )
+        # Initialize TTS Generator - no need to pass HF settings as they're read from env
+        self.tts_generator = TTSGenerator(max_audio_length_ms=30000)
         
         # Flag to track if model is loaded
         self.model_loaded = False
@@ -61,18 +41,25 @@ class TTSServer:
         self.logger.info(f"TTS Server initialized on {host}:{port}")
     
     async def load_model(self):
-        """Load the TTS model asynchronously"""
+        """Load the TTS model asynchronously and wait for completion"""
         async with self.model_load_lock:
             if not self.model_loaded:
                 self.logger.info("Starting to load TTS model...")
                 loop = asyncio.get_event_loop()
-                self.model_loaded = await loop.run_in_executor(None, self.tts_generator.load_model)
                 
-                if self.model_loaded:
-                    self.logger.info("TTS model loaded successfully")
-                    self.model_loaded_event.set()
-                else:
-                    self.logger.error("Failed to load TTS model")
+                # Run model loading in a thread pool and wait for it to complete
+                try:
+                    self.model_loaded = await loop.run_in_executor(None, self.tts_generator.load_model)
+                    
+                    if self.model_loaded:
+                        self.logger.info("TTS model loaded successfully")
+                        self.model_loaded_event.set()
+                    else:
+                        self.logger.error("Failed to load TTS model")
+                        raise RuntimeError("Model loading failed")
+                except Exception as e:
+                    self.logger.error(f"Error loading model: {str(e)}")
+                    raise
     
     async def handle_client(self, websocket):
         """Handle a client connection"""
@@ -140,13 +127,19 @@ class TTSServer:
         """Start the WebSocket server"""
         self.logger.info(f"Starting TTS WebSocket server on {self.host}:{self.port}")
         
-        # Start loading the model immediately
-        self.logger.info("Starting model loading process")
-        load_task = asyncio.create_task(self.load_model())
+        # Load the model first and wait for completion
+        self.logger.info("Loading TTS model before starting server...")
+        await self.load_model()
         
+        if not self.model_loaded:
+            self.logger.error("Failed to load TTS model. Server cannot start.")
+            return
+        
+        self.logger.info("Model loaded successfully, starting WebSocket server...")
+        
+        # Create the websocket server only after model is loaded
         async with websockets.serve(self.handle_client, self.host, self.port):
             self.logger.info(f"WebSocket server is running on {self.host}:{self.port}")
-            self.logger.info("Server is waiting for model to finish loading before accepting requests")
             await asyncio.Future()  # Keep the server running indefinitely
     
     def run(self):
@@ -162,9 +155,6 @@ def parse_arguments():
 
 def main():
     """Main entry point for the TTS WebSocket Server"""
-    # Verify setup first
-    if not verify_setup():
-        return 1
     
     # Set up logging
     logger = setup_logging()
