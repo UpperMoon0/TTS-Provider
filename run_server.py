@@ -23,8 +23,21 @@ def parse_arguments():
     parser.add_argument("--port", type=int, default=8765, help="Port to listen on")
     return parser.parse_args()
 
+def verify_setup():
+    """Verify that the required files and directories exist"""
+    csm_path = os.path.join(os.path.dirname(__file__), 'csm')
+    if not os.path.exists(csm_path):
+        print("Error: CSM repository not found. Please clone it first:")
+        print("git clone https://github.com/SesameAILabs/csm.git")
+        return False
+    return True
+
 def main():
     """Main entry point for the TTS WebSocket Server"""
+    # Verify setup first
+    if not verify_setup():
+        return 1
+
     # Set up logging
     logger = setup_logging()
     logger.info("Starting TTS WebSocket Server")
