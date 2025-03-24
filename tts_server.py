@@ -12,11 +12,11 @@ from tts_generator import TTSGenerator
 class TTSServer:
     """WebSocket server for Text-to-Speech services."""
     
-    def __init__(self, host="0.0.0.0", port=8765, mode="download", model_path=None):
+    def __init__(self, host="0.0.0.0", port=8765):
         self.host = host
         self.port = port
         self.logger = logging.getLogger("TTSServer")
-        self.tts_generator = TTSGenerator(mode=mode, model_path=model_path)
+        self.tts_generator = TTSGenerator()
         self.server = None
         self.model_loaded = False
         self.model_loading = False

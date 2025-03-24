@@ -1,69 +1,65 @@
 import os
 import logging
 from typing import Optional
-from huggingface_hub import HfFolder, snapshot_download
+from huggingface_hub import snapshot_download
+from huggingface_hub.utils import LocalTokenNotFoundError
 
 class ModelLoader:
     """
-    Handles loading of AI models with support for both downloading and reusing existing model files.
+    Handles loading of AI models with local model storage within the repository.
     """
     
     def __init__(self, logger=None):
         """Initialize the model loader."""
         self.logger = logger or logging.getLogger("ModelLoader")
+        self.base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+        os.makedirs(self.base_path, exist_ok=True)
     
-    def _configure_hf_token(self) -> None:
-        """Configure the HuggingFace token from environment variables."""
-        hf_token = os.getenv("HF_TOKEN")
-        if hf_token:
-            HfFolder.save_token(hf_token)
-        else:
-            self.logger.warning("HF_TOKEN not set. Some models may not be accessible.")
-        return hf_token
-
-    def get_model_path(self, mode: str = "download", model_path: Optional[str] = None) -> Optional[str]:
+    def get_model_path(self) -> str:
         """
-        Get the path to the model files, either by downloading or using existing files.
+        Get or create the path to the model files. Downloads if not present.
         
-        Args:
-            mode: Either "download" to use HuggingFace cache or "reuse" to use existing files
-            model_path: Path to existing model folder when mode is "reuse"
-                       Example: "D:/Dev/Models/huggingface/hub/models--sesame--csm-1b"
-                       
         Returns:
-            Path to the model directory or None if there was an error
+            Path to the model directory
         """
-        if mode not in ["download", "reuse"]:
-            self.logger.error(f"Invalid mode: {mode}. Must be 'download' or 'reuse'")
-            return None
-            
-        if mode == "reuse":
-            if not model_path:
-                self.logger.error("model_path must be provided when mode is 'reuse'")
-                return None
-                
-            if not os.path.exists(model_path):
-                self.logger.error(f"Model path does not exist: {model_path}")
-                return None
-                
-            # Check for required model folders
-            required_folders = ["blobs", "refs", "snapshots"]
-            missing = [f for f in required_folders if not os.path.exists(os.path.join(model_path, f))]
-            if missing:
-                self.logger.error(f"Model path is missing required folders: {', '.join(missing)}")
-                return None
-                
-            return model_path
-            
-        else:  # mode == "download"
-            # Configure HF token and download model
-            hf_token = self._configure_hf_token()
-            if not hf_token:
-                self.logger.error("HF_TOKEN not set. Cannot download model.")
-                return None
-                
+        model_path = os.path.join(self.base_path, "csm-1b")
+        
+        # If model doesn't exist, download it
+        if not os.path.exists(model_path) or not os.listdir(model_path):
+            self.logger.info("Model not found locally, downloading...")
             try:
-                return snapshot_download("sesame/csm-1b", token=hf_token)
+                # Increased timeouts and added retry attempts
+                snapshot_download(
+                    "sesame/csm-1b",
+                    local_dir=model_path,
+                    local_dir_use_symlinks=False,
+                    token=os.getenv("HUGGINGFACE_TOKEN"),  # Use token if available
+                    max_retries=5,
+                    force_download=True,
+                    resume_download=True,
+                    proxies=None,
+                    etag_timeout=100,
+                    local_files_only=False,
+                    token_timeout=100
+                )
+                self.logger.info(f"Model downloaded successfully to {model_path}")
+            except LocalTokenNotFoundError:
+                self.logger.warning("No Hugging Face token found. Attempting anonymous download...")
+                # Retry without token
+                snapshot_download(
+                    "sesame/csm-1b",
+                    local_dir=model_path,
+                    local_dir_use_symlinks=False,
+                    max_retries=5,
+                    force_download=True,
+                    resume_download=True,
+                    proxies=None,
+                    etag_timeout=100,
+                    local_files_only=False
+                )
+                self.logger.info(f"Model downloaded successfully to {model_path}")
             except Exception as e:
                 self.logger.error(f"Error downloading model: {str(e)}")
-                return None
+                raise RuntimeError(f"Failed to download model: {str(e)}")
+        
+        return model_path

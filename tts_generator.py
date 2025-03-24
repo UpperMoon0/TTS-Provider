@@ -4,35 +4,26 @@ import logging
 import torch
 import torchaudio
 from typing import Tuple
-from dotenv import load_dotenv
 
 from csm.generator import load_csm_1b
 import csm.watermarking
 import silentcipher_patch
 from model_loader import ModelLoader
 
-# Load environment variables from .env file
-load_dotenv()
-
 class TTSGenerator:
     """
     Text-to-Speech generator using the CSM-1B model.
-    
-    This class handles loading the model, generating speech from text,
-    with support for both downloading and reusing existing model files.
     """
     
     _generator = None
     _sample_rate = None
     _watermarker = None
 
-    def __init__(self, mode="download", model_path=None, device=None, max_audio_length_ms=30000):
+    def __init__(self, device=None, max_audio_length_ms=30000):
         """
         Initialize the TTS Generator.
         
         Args:
-            mode: Either "download" to use HuggingFace cache or "reuse" to use existing files
-            model_path: Path to existing model folder when mode is "reuse"
             device: Device to use for model inference ('cuda' or 'cpu')
             max_audio_length_ms: Maximum audio length in milliseconds
         """
@@ -40,11 +31,8 @@ class TTSGenerator:
         self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
         self.max_audio_length_ms = max_audio_length_ms
         
-        # Initialize the model loader and get model path
+        # Initialize the model loader
         self.model_loader = ModelLoader()
-        self.model_path = self.model_loader.get_model_path(mode, model_path)
-        if not self.model_path:
-            raise RuntimeError("Could not determine model path")
         
         self.logger.info(f"TTS Generator initialized on device: {self.device}")
             
@@ -66,9 +54,10 @@ class TTSGenerator:
                     self.logger.info(f"Initializing watermarker on {self.device}...")
                     TTSGenerator._watermarker = csm.watermarking.load_watermarker(device=self.device)
                 
-                # Load model with just the device parameter
-                TTSGenerator._generator = load_csm_1b(device=self.device)
-                TTSGenerator._sample_rate = TTSGenerator._generator.sample_rate
+                # Get model path and load model
+                model_path = self.model_loader.get_model_path()
+                TTSGenerator._generator = load_csm_1b(device=self.device, model_path=model_path)
+                TTSGenerator._is_model_loaded = True
                 
                 # Remove the patch after model loading
                 silentcipher_patch.remove_patch()

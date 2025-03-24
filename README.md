@@ -25,53 +25,27 @@ pip install -r requirements.txt
 huggingface-cli login
 ```
 
-## Model Management
-
-The server supports two modes for loading the model:
-
-1. Download Mode (default):
-   - Downloads the model from HuggingFace when first run
-   - Requires HF_TOKEN to be set in .env file
-   - Model is stored in HF_HOME/hub directory
-
-2. Reuse Mode:
-   - Uses an existing downloaded model
-   - No need to download again if you already have the model files
-   - Must specify the path to the model folder
-
-Create a `.env` file (copy from `.env.template`) to configure model storage:
-```
-HF_TOKEN=your_huggingface_token_here
-HF_HOME=D:/Dev/Models/huggingface
-```
-
 ## Running the Server
 
 Start the WebSocket server:
 ```bash
-python run_server.py [--host HOST] [--port PORT] [--mode MODE] [--model-path PATH]
+python run_server.py [--host HOST] [--port PORT]
 ```
 
 Arguments:
 - `--host`: Host to bind to (default: 0.0.0.0)
 - `--port`: Port to listen on (default: 8765)
-- `--mode`: Model loading mode: "download" or "reuse" (default: download)
-- `--model-path`: Path to existing model folder when using reuse mode
-                Example: "D:/Dev/Models/huggingface/hub/models--sesame--csm-1b"
 
-Examples:
+Example:
 ```bash
-# Download mode (default)
+# Default settings
 python run_server.py
-
-# Reuse existing model
-python run_server.py --mode reuse --model-path "D:/Dev/Models/huggingface/hub/models--sesame--csm-1b"
 
 # Custom port
 python run_server.py --port 8080
 ```
 
-The server will load the CSM-1B model at startup before accepting any WebSocket connections.
+The server will automatically download and load the CSM-1B model on first run. The model will be stored locally in the `models` directory within the project.
 
 ## WebSocket API
 

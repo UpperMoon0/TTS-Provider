@@ -1,16 +1,17 @@
-torch==2.4.0
-torchaudio==2.4.0
+torch>=2.0.0
+torchaudio>=2.0.0
 tokenizers==0.21.0
-transformers==4.49.0
-huggingface_hub==0.28.1
+transformers>=4.30.0
+huggingface_hub>=0.17.0
 moshi==0.2.2
 torchtune==0.4.0
 torchao==0.9.0
 silentcipher @ git+https://github.com/SesameAILabs/silentcipher@master
-numpy<2.0.0 
+numpy>=1.21.0
 scipy>=1.10.0
 soundfile>=0.12.0
 pydub>=0.25.1
-websockets>=11.0.0
+websockets>=10.0
 bitsandbytes>=0.45.0
 json5>=0.9.0
+python-dotenv>=0.19.0
