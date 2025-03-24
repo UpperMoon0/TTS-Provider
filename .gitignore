@@ -37,6 +37,9 @@ wheels/
 outputs/
 models/
 
+# CSM repository (cloned separately)
+csm/
+
 # Jupyter Notebooks
 .ipynb_checkpoints
 *.ipynb

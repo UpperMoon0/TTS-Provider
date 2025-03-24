@@ -1,91 +1,82 @@
-import os
-import sys
 import io
+import time
 import logging
 import torch
 import torchaudio
+from typing import Tuple
 from dotenv import load_dotenv
-from huggingface_hub import HfFolder, snapshot_download
 
 from csm.generator import load_csm_1b
-# Import the entire watermarking module to avoid name resolution issues
 import csm.watermarking
+import silentcipher_patch
+from model_loader import ModelLoader
 
 # Load environment variables from .env file
 load_dotenv()
 
 class TTSGenerator:
-    # Class-level variables to hold the loaded model and its sample rate.
+    """
+    Text-to-Speech generator using the CSM-1B model.
+    
+    This class handles loading the model, generating speech from text,
+    with support for both downloading and reusing existing model files.
+    """
+    
     _generator = None
     _sample_rate = None
+    _watermarker = None
 
-    def __init__(self, device=None, max_audio_length_ms=30000):
+    def __init__(self, mode="download", model_path=None, device=None, max_audio_length_ms=30000):
+        """
+        Initialize the TTS Generator.
+        
+        Args:
+            mode: Either "download" to use HuggingFace cache or "reuse" to use existing files
+            model_path: Path to existing model folder when mode is "reuse"
+            device: Device to use for model inference ('cuda' or 'cpu')
+            max_audio_length_ms: Maximum audio length in milliseconds
+        """
         self.logger = logging.getLogger("TTSGenerator")
         self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
         self.max_audio_length_ms = max_audio_length_ms
-
-        # Simplify to just use HF_HOME directly
-        hf_home = os.path.expandvars(os.getenv("HF_HOME", ""))
-        if hf_home:
-            # Use the standard HF_HOME/hub path
-            self.hf_cache_dir = os.path.join(hf_home, "hub")
-            os.makedirs(self.hf_cache_dir, exist_ok=True)
-            self.logger.info(f"Using HF_HOME/hub: {self.hf_cache_dir}")
-        else:
-            self.hf_cache_dir = ""
-            self.logger.warning("HF_HOME not set. Using default cache location.")
-
-        # Get Hugging Face token from .env
-        hf_token = os.getenv("HF_TOKEN")
-        if hf_token:
-            HfFolder.save_token(hf_token)
-            self.logger.info("Configured Hugging Face token.")
-
-            # Check if model is already cached
-            if self.hf_cache_dir:
-                model_path = os.path.join(self.hf_cache_dir, "models--sesame--csm-1b")
-                if os.path.exists(model_path):
-                    self.logger.info(f"Using cached model from: {model_path}")
-                else:
-                    self.logger.info("Model not found in cache. Downloading...")
-                    
-                # Pre-download model files if not already cached
-                try:
-                    snapshot_download(
-                        "sesame/csm-1b",
-                        cache_dir=self.hf_cache_dir,
-                        token=hf_token
-                    )
-                    self.logger.info("Model files are cached.")
-                except Exception as e:
-                    self.logger.warning(f"Model caching warning: {e}")
-
+        
+        # Initialize the model loader and get model path
+        self.model_loader = ModelLoader()
+        self.model_path = self.model_loader.get_model_path(mode, model_path)
+        if not self.model_path:
+            raise RuntimeError("Could not determine model path")
+        
         self.logger.info(f"TTS Generator initialized on device: {self.device}")
-
-    def load_model(self):
-        """Load the CSM-1B TTS model. Reuse if already loaded."""
+            
+    def load_model(self) -> bool:
+        """
+        Load the CSM-1B TTS model. Reuse if already loaded.
+        
+        Returns:
+            bool: True if model loaded successfully, False otherwise
+        """
         if TTSGenerator._generator is None:
             self.logger.info(f"Loading CSM-1B model on {self.device}...")
             try:
-                # Rely on environment variables already loaded from .env
-                # Not setting HF_HOME directly in code
+                # Apply the patch for silentcipher torch.load before model loading
+                silentcipher_patch.apply_patch()
                 
-                # Log the current HF_HOME for debugging
-                hf_home = os.getenv("HF_HOME", "")
-                if hf_home:
-                    self.logger.info(f"Using HF_HOME from environment: {hf_home}")
-                else:
-                    self.logger.warning("HF_HOME not set in environment variables")
-                
-                # Use the fully qualified path to the function to prevent name resolution issues
-                self.logger.info(f"Initializing watermarker on {self.device}...")
-                watermarker = csm.watermarking.load_watermarker(device=self.device)
+                # Initialize watermarker only once and store it at class level
+                if TTSGenerator._watermarker is None:
+                    self.logger.info(f"Initializing watermarker on {self.device}...")
+                    TTSGenerator._watermarker = csm.watermarking.load_watermarker(device=self.device)
                 
                 # Load model with just the device parameter
                 TTSGenerator._generator = load_csm_1b(device=self.device)
                 TTSGenerator._sample_rate = TTSGenerator._generator.sample_rate
+                
+                # Remove the patch after model loading
+                silentcipher_patch.remove_patch()
+                
                 self.logger.info("Model loaded successfully.")
             except Exception as e:
+                # Ensure the patch is removed even if an exception occurs
+                silentcipher_patch.remove_patch()
                 self.logger.error(f"Error loading model: {e}")
                 import traceback
                 self.logger.error(f"Stack trace: {traceback.format_exc()}")
@@ -94,36 +85,102 @@ class TTSGenerator:
             self.logger.info("Reusing already loaded model.")
         return True
 
-    def generate_speech(self, text, speaker=0):
+    def generate_speech(self, text: str, speaker: int = 0, timeout: int = 120) -> Tuple[torch.Tensor, int]:
         """
-        Generate speech audio tensor from text.
+        Generate speech audio tensor from text with timeout and progress reporting.
+        
+        Args:
+            text: Text to convert to speech
+            speaker: Speaker ID (0 for male, 1 for female)
+            timeout: Maximum time in seconds to wait for generation
+            
+        Returns:
+            Tuple containing (audio_tensor, sample_rate)
+            
         Raises:
-            RuntimeError if the model is not loaded.
+            RuntimeError: If the model is not loaded or generation times out
         """
         if TTSGenerator._generator is None:
             self.logger.error("Model not loaded. Call load_model() first.")
             raise RuntimeError("Model not loaded")
         
-        self.logger.info(f"Generating speech for speaker {speaker}: '{text}'")
-        audio = TTSGenerator._generator.generate(
-            text=text,
-            speaker=speaker,
-            context=[],
-            max_audio_length_ms=self.max_audio_length_ms,
-        )
-        self.logger.info("Audio generation completed.")
-        return audio, TTSGenerator._sample_rate
+        # Log text length for diagnostics
+        self.logger.info(f"Generating speech for speaker {speaker}: '{text}' ({len(text)} chars)")
+        
+        # Start time for timeout tracking
+        start_time = time.time()
+        
+        try:
+            # Set a watchdog thread if possible
+            if hasattr(torch, 'cuda') and torch.cuda.is_available():
+                # Only use watchdog on CUDA to avoid affecting CPU performance
+                prev_handler = None
+                if hasattr(torch.cuda, 'set_watchdog_interval'):
+                    prev_handler = torch.cuda.get_watchdog_interval()
+                    # Check every 5 seconds if we've exceeded timeout
+                    torch.cuda.set_watchdog_interval(5000)
+            
+            # Generate the audio
+            audio = TTSGenerator._generator.generate(
+                text=text,
+                speaker=speaker,
+                context=[],
+                max_audio_length_ms=self.max_audio_length_ms,
+            )
+            
+            # Check if generation took too long
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                self.logger.warning(f"Audio generation completed, but exceeded timeout: {elapsed:.1f}s > {timeout}s")
+            else:
+                self.logger.info(f"Audio generation completed in {elapsed:.1f}s")
+            
+            return audio, TTSGenerator._sample_rate
+            
+        except Exception as e:
+            elapsed = time.time() - start_time
+            self.logger.error(f"Error generating speech after {elapsed:.1f}s: {str(e)}")
+            raise
+        finally:
+            # Restore previous watchdog interval if changed
+            if hasattr(torch, 'cuda') and torch.cuda.is_available() and 'prev_handler' in locals() and prev_handler is not None:
+                if hasattr(torch.cuda, 'set_watchdog_interval'):
+                    torch.cuda.set_watchdog_interval(prev_handler)
 
-    def generate_wav_bytes(self, text, speaker=0):
-        """Generate speech audio as WAV bytes."""
-        audio, sample_rate = self.generate_speech(text, speaker)
-        buffer = io.BytesIO()
-        torchaudio.save(buffer, audio.unsqueeze(0).cpu(), sample_rate, format="wav")
-        buffer.seek(0)
-        return buffer.read()
+    def generate_wav_bytes(self, text: str, speaker: int = 0, timeout: int = 120) -> bytes:
+        """
+        Generate speech audio as WAV bytes with timeout.
+        
+        Args:
+            text: Text to convert to speech
+            speaker: Speaker ID (0 for male, 1 for female)
+            timeout: Maximum time in seconds to wait for generation
+            
+        Returns:
+            WAV audio data as bytes
+            
+        Raises:
+            RuntimeError: If audio generation fails
+        """
+        try:
+            start_time = time.time()
+            audio, sample_rate = self.generate_speech(text, speaker, timeout)
+            
+            self.logger.info("Converting audio tensor to WAV format...")
+            buffer = io.BytesIO()
+            torchaudio.save(buffer, audio.unsqueeze(0).cpu(), sample_rate, format="wav")
+            buffer.seek(0)
+            
+            wav_bytes = buffer.read()
+            self.logger.info(f"WAV generation complete: {len(wav_bytes)} bytes")
+            
+            return wav_bytes
+        except Exception as e:
+            self.logger.error(f"Error in generate_wav_bytes: {str(e)}")
+            raise
 
     @property
-    def sample_rate(self):
+    def sample_rate(self) -> int:
         """Get the sample rate of the loaded model."""
         if TTSGenerator._sample_rate is None:
             raise RuntimeError("Model not loaded, sample rate unavailable")

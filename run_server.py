@@ -21,6 +21,10 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="TTS WebSocket Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to")
     parser.add_argument("--port", type=int, default=8765, help="Port to listen on")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--mode", choices=["download", "reuse"], default="download", 
+                       help="Model loading mode: download from HuggingFace or reuse existing files")
+    parser.add_argument("--model-path", help="Path to existing model folder when using reuse mode")
     return parser.parse_args()
 
 def verify_setup():
@@ -38,21 +42,34 @@ def main():
     if not verify_setup():
         return 1
 
-    # Set up logging
-    logger = setup_logging()
-    logger.info("Starting TTS WebSocket Server")
-    
     # Parse arguments
     args = parse_arguments()
     
+    # Set up logging
+    logger = setup_logging()
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.debug("Debug logging enabled")
+    
+    # Validate arguments
+    if args.mode == "reuse" and not args.model_path:
+        logger.error("--model-path must be provided when using --mode=reuse")
+        return 1
+    
+    logger.info("Starting TTS WebSocket Server")
+    
     try:
         # Create and run the TTS server
-        server = TTSServer(host=args.host, port=args.port)
+        server = TTSServer(
+            host=args.host, 
+            port=args.port,
+            mode=args.mode,
+            model_path=args.model_path
+        )
         
         # Run the server (blocking call)
         logger.info(f"Server running at ws://{args.host}:{args.port}")
         logger.info("Model will be loaded at startup before accepting requests")
-        logger.info("Press Ctrl+C to exit")
         server.run()
     
     except KeyboardInterrupt:
