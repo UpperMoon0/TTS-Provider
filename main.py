@@ -30,7 +30,7 @@ class TTSServer:
         # Load environment variables
         load_dotenv()
         
-        # Initialize TTS Generator - no need to pass HF settings as they're read from env
+        # Initialize TTS Generator
         self.tts_generator = TTSGenerator(max_audio_length_ms=30000)
         
         # Flag to track if model is loaded
@@ -38,28 +38,11 @@ class TTSServer:
         self.model_load_lock = asyncio.Lock()
         self.model_loaded_event = asyncio.Event()
         
+        # Add shutdown event
+        self.shutdown_event = asyncio.Event()
+        self.server = None
+        
         self.logger.info(f"TTS Server initialized on {host}:{port}")
-    
-    async def load_model(self):
-        """Load the TTS model asynchronously and wait for completion"""
-        async with self.model_load_lock:
-            if not self.model_loaded:
-                self.logger.info("Starting to load TTS model...")
-                loop = asyncio.get_event_loop()
-                
-                # Run model loading in a thread pool and wait for it to complete
-                try:
-                    self.model_loaded = await loop.run_in_executor(None, self.tts_generator.load_model)
-                    
-                    if self.model_loaded:
-                        self.logger.info("TTS model loaded successfully")
-                        self.model_loaded_event.set()
-                    else:
-                        self.logger.error("Failed to load TTS model")
-                        raise RuntimeError("Model loading failed")
-                except Exception as e:
-                    self.logger.error(f"Error loading model: {str(e)}")
-                    raise
     
     async def handle_client(self, websocket):
         """Handle a client connection"""
@@ -86,6 +69,15 @@ class TTSServer:
         """Process a message from a client"""
         try:
             request = json.loads(message)
+            
+            # Handle test messages
+            if request.get('type') == 'test':
+                await websocket.send(json.dumps({
+                    'status': 'success',
+                    'message': 'Test message received',
+                    'echo': request.get('message', '')
+                }))
+                return
             
             if 'text' not in request:
                 await websocket.send(json.dumps({'error': 'Missing required field: text'}))
@@ -123,11 +115,38 @@ class TTSServer:
             self.logger.error(f"Error processing message: {str(e)}")
             await websocket.send(json.dumps({'error': f'Server error: {str(e)}'}))
     
+    async def _process_http_request(self, path, request_headers):
+        """Handle HTTP requests as a fallback"""
+        if path == "/health" or path == "/healthz":
+            return (
+                200,
+                {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"},
+                json.dumps({"status": "ok"}).encode()
+            )
+        
+        # For all other HTTP requests, return helpful information
+        response_body = json.dumps({
+            "error": "This is a WebSocket server, not an HTTP server",
+            "message": "Please connect using a WebSocket client with the ws:// protocol",
+            "status": "This server is running and healthy"
+        }).encode()
+        
+        return (
+            400,
+            {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "*"
+            },
+            response_body
+        )
+    
     async def start(self):
         """Start the WebSocket server"""
         self.logger.info(f"Starting TTS WebSocket server on {self.host}:{self.port}")
         
-        # Load the model first and wait for completion
+        # Load the model first
         self.logger.info("Loading TTS model before starting server...")
         await self.load_model()
         
@@ -137,10 +156,67 @@ class TTSServer:
         
         self.logger.info("Model loaded successfully, starting WebSocket server...")
         
-        # Create the websocket server only after model is loaded
-        async with websockets.serve(self.handle_client, self.host, self.port):
-            self.logger.info(f"WebSocket server is running on {self.host}:{self.port}")
-            await asyncio.Future()  # Keep the server running indefinitely
+        # Create the websocket server
+        async def ws_handler(websocket, path):
+            await self.handle_client(websocket)
+        
+        self.server = await websockets.serve(
+            ws_handler,
+            self.host,
+            self.port,
+            ping_interval=30,
+            ping_timeout=10,
+            close_timeout=10,
+            max_size=10 * 1024 * 1024,
+            max_queue=32,
+            process_request=self._process_http_request,
+            compression=None  # Disable compression for testing
+        )
+        
+        self.logger.info(f"WebSocket server is running on {self.host}:{self.port}")
+        await self.shutdown_event.wait()
+    
+    async def shutdown(self):
+        """Gracefully shutdown the server"""
+        self.logger.info("Shutting down server...")
+        self.shutdown_event.set()
+        
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+        
+        # Cancel all tasks except the current one
+        current_task = asyncio.current_task()
+        tasks = [t for t in asyncio.all_tasks() if t is not current_task]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        
+        self.logger.info("Server shutdown complete")
+    
+    async def load_model(self):
+        """Load the TTS model asynchronously and wait for completion"""
+        async with self.model_load_lock:
+            if not self.model_loaded:
+                self.logger.info("Starting to load TTS model...")
+                loop = asyncio.get_event_loop()
+                
+                # Run model loading in a thread pool and wait for it to complete
+                try:
+                    self.model_loaded = await loop.run_in_executor(None, self.tts_generator.load_model)
+                    
+                    if self.model_loaded:
+                        self.logger.info("TTS model loaded successfully")
+                        self.model_loaded_event.set()
+                    else:
+                        self.logger.error("Failed to load TTS model")
+                        raise RuntimeError("Model loading failed")
+                except Exception as e:
+                    self.logger.error(f"Error loading model: {str(e)}")
+                    raise
     
     def run(self):
         """Run the server (blocking call)"""
