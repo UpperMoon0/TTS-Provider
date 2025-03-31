@@ -78,7 +78,8 @@ class TTSClient:
         else:
             self.logger.warning("Not connected to the server")
     
-    async def generate_speech(self, text, output_path, speaker=0, sample_rate=24000, response_mode="stream"):
+    async def generate_speech(self, text, output_path, speaker=0, sample_rate=24000, 
+                           response_mode="stream", model=None, **kwargs):
         """Generate speech from the given text and save it to the output path.
         
         Args:
@@ -87,6 +88,9 @@ class TTSClient:
             speaker (int): The speaker ID to use
             sample_rate (int): The sample rate of the generated audio
             response_mode (str): The response mode, either "stream" or "file"
+            model (str, optional): The model to use (e.g., "sesame", "edge")
+            **kwargs: Additional model-specific parameters:
+                      - For Edge TTS: rate, volume, pitch
             
         Returns:
             bool: True if successful, False otherwise
@@ -101,6 +105,19 @@ class TTSClient:
             "sample_rate": sample_rate,
             "response_mode": response_mode
         }
+        
+        # Add model if specified
+        if model:
+            request["model_type"] = model
+            
+        # Add additional parameters if provided
+        extra_params = {}
+        for param in ["rate", "volume", "pitch"]:
+            if param in kwargs:
+                extra_params[param] = kwargs[param]
+                
+        if extra_params:
+            request["extra_params"] = extra_params
         
         try:
             self.logger.info(f"Sending TTS request: {json.dumps(request)}")
@@ -177,4 +194,32 @@ class TTSClient:
                 
         except Exception as e:
             self.logger.error(f"TTS generation failed: {str(e)}")
+            raise
+    
+    async def get_server_info(self):
+        """Get information about the TTS server, including available models.
+        
+        Returns:
+            dict: Server information including available models, or None if failed
+        """
+        if not self.is_connected():
+            self.logger.error("Not connected to the server")
+            raise ConnectionError("Not connected to the server")
+            
+        request = {
+            "command": "info"
+        }
+        
+        try:
+            self.logger.info("Requesting server information")
+            await self.websocket.send(json.dumps(request))
+            
+            # Wait for response
+            response_str = await asyncio.wait_for(self.websocket.recv(), timeout=self.timeout)
+            info = json.loads(response_str)
+            self.logger.info(f"Received server information: {json.dumps(info)}")
+            
+            return info
+        except Exception as e:
+            self.logger.error(f"Failed to get server information: {str(e)}")
             raise

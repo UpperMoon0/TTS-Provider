@@ -1,55 +1,59 @@
 #!/usr/bin/env python3
-import sys
+"""
+Main script to run the TTS server
+"""
+
+import os
 import logging
 import argparse
-import asyncio
+from dotenv import load_dotenv
 from tts_server import TTSServer
 
 def setup_logging():
-    """Configure logging for the application."""
+    """Set up logging for the server"""
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler(sys.stdout)]
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    return logging.getLogger("TTS-Service")
-
-def parse_arguments():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="TTS WebSocket Server")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to")
-    parser.add_argument("--port", type=int, default=8765, help="Port to listen on")
-    parser.add_argument("--preload-model", action="store_true", default=True, 
-                        help="Preload the model at startup (default: True)")
-    return parser.parse_args()
-
-async def load_model(server, logger):
-    """Load the TTS model."""
-    logger.info("Preloading TTS model (this may take a while)...")
-    await server.preload_model()
-    logger.info("TTS model loaded successfully")
 
 def main():
-    """Main entry point for the TTS WebSocket Server."""
-    logger = setup_logging()
-    args = parse_arguments()
+    """Main function to run the TTS server"""
+    # Load environment variables from .env file if it exists
+    load_dotenv()
     
-    try:
-        logger.info(f"Starting TTS WebSocket Server on {args.host}:{args.port}")
-        server = TTSServer(host=args.host, port=args.port)
-        
-        # Load model if requested
-        if args.preload_model:
-            # We need to use asyncio to call the async preload_model method
-            asyncio.run(load_model(server, logger))
-        
-        server.run()
-    except KeyboardInterrupt:
-        logger.info("Server stopped by user")
-    except Exception as e:
-        logger.error(f"Error running server: {str(e)}")
-        return 1
-    return 0
+    # Set up logging
+    setup_logging()
+    logger = logging.getLogger("TTS-Server-Main")
+    
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Run the TTS server")
+    parser.add_argument("--host", default=os.environ.get("TTS_HOST", "0.0.0.0"), 
+                        help="Host to bind the server to")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("TTS_PORT", 9000)), 
+                        help="Port to bind the server to")
+    parser.add_argument("--model", default=os.environ.get("TTS_MODEL", "sesame"), 
+                        help="Default TTS model to use (e.g., 'sesame', 'edge')")
+    args = parser.parse_args()
+    
+    # Log the configuration
+    logger.info(f"Starting TTS server:")
+    logger.info(f" - Host: {args.host}")
+    logger.info(f" - Port: {args.port}")
+    logger.info(f" - Default model: {args.model}")
+    
+    # Set the model in the environment for the server to use
+    if args.model:
+        os.environ["TTS_MODEL"] = args.model
+    
+    # Create and run the server
+    server = TTSServer(host=args.host, port=args.port)
+    
+    # Preload the model for faster first response
+    import asyncio
+    asyncio.run(server.preload_model())
+    
+    # Run the server
+    server.run()
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

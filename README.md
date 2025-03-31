@@ -1,84 +1,144 @@
 # TTS Provider Server
 
-A WebSocket server that provides Text-to-Speech services using CSM-1B model.
+A flexible WebSocket-based Text-to-Speech service that supports multiple TTS backends. Currently supports:
 
-## Setup
+- Sesame CSM-1B (default)
+- Microsoft Edge TTS
 
-1. Clone the CSM repository inside this project:
-```bash
-git clone https://github.com/SesameAILabs/csm.git
-```
+## Installation
 
-2. Create and activate a Python virtual environment (Python 3.10 required):
-```bash
-python3.10 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-3. Install requirements:
-```bash
-pip install -r requirements.txt
-```
-
-4. Log in to Hugging Face (required to download the model):
-```bash
-huggingface-cli login
-```
+1. Clone this repository
+2. Install the required packages:
+   ```
+   pip install -r requirements.txt
+   ```
 
 ## Running the Server
 
-Start the WebSocket server:
+### Default (Sesame CSM-1B)
+
+Run the server with Sesame CSM-1B as the default model:
+
 ```bash
-python run_server.py [--host HOST] [--port PORT]
+# On Linux/Mac
+./run_with_sesame.sh
+
+# Or directly
+python -m run_server
 ```
 
-Arguments:
-- `--host`: Host to bind to (default: 0.0.0.0)
-- `--port`: Port to listen on (default: 8765)
+### Using Edge TTS
 
-Example:
+Run the server with Microsoft Edge TTS as the default model:
+
 ```bash
-# Default settings
-python run_server.py
+# On Linux/Mac
+./run_with_edge_tts.sh
 
-# Custom port
-python run_server.py --port 8080
+# Or directly
+python -m run_server --model edge
 ```
 
-The server will automatically download and load the CSM-1B model on first run. The model will be stored locally in the `models` directory within the project.
+## Client Usage
 
-## WebSocket API
+Clients can connect to the server via WebSocket. See `tts_client.py` for a complete client implementation.
 
-Send requests to the server in the following JSON format:
+### Basic Example
+
+```python
+import asyncio
+from tts_client import TTSClient
+
+async def main():
+    client = TTSClient(host="localhost", port=9000)
+    
+    try:
+        await client.connect()
+        
+        # Get server information
+        info = await client.get_server_info()
+        print(f"Available models: {info.get('available_models')}")
+        
+        # Generate speech with default model
+        await client.generate_speech(
+            text="Hello, this is a test.",
+            output_path="output.wav"
+        )
+        
+        # Generate speech with specific model
+        await client.generate_speech(
+            text="Hello, this is Edge TTS speaking.",
+            output_path="output_edge.wav",
+            model="edge",
+            # Edge TTS specific parameters
+            rate="+10%",  # 10% faster
+            volume="+20%"  # 20% louder
+        )
+        
+    finally:
+        await client.disconnect()
+
+asyncio.run(main())
+```
+
+## Selecting Models
+
+Clients can select which model to use in each request by including a `model` parameter:
+
+- `sesame` (or `csm`) - Use Sesame CSM-1B model
+- `edge` (or `edge-tts`) - Use Microsoft Edge TTS
+
+## API Documentation
+
+### WebSocket Request Format
+
+Basic request format:
+
 ```json
 {
-    "text": "Text to convert to speech",
-    "speaker": 0  # 0 for male voice, 1 for female voice (optional, defaults to 0)
+  "text": "Text to convert to speech",
+  "speaker": 0,  
+  "sample_rate": 24000,
+  "response_mode": "stream",
+  "model_type": "sesame"  // Optional, specify model type
 }
 ```
 
-The server will respond with:
-1. A JSON message containing metadata:
+#### Edge TTS Specific Parameters
+
+When using Edge TTS, you can include additional parameters:
+
 ```json
 {
-    "status": "success",
-    "message": "Audio generated successfully",
-    "format": "wav",
-    "sample_rate": 24000,
-    "length_bytes": <size of the audio data>
+  "text": "Text to convert to speech",
+  "speaker": 0,
+  "model_type": "edge",
+  "rate": "+10%",
+  "volume": "+20%",
+  "pitch": "-5%"
 }
 ```
 
-2. The WAV audio data as a binary message
+### Server Information Request
 
-### Loading Status
+To get information about the server and available models:
 
-If the model is still loading when you connect, you'll receive:
 ```json
 {
-    "status": "loading",
-    "message": "TTS model is still loading, request will be processed when ready"
+  "command": "info"
 }
 ```
 
-The server will process your request automatically once the model is loaded.
+## Speaker IDs
+
+### Sesame CSM-1B Speakers
+- 0: Male voice
+- 1: Female voice
+
+### Edge TTS Speakers
+- 0: US Male (Guy)
+- 1: US Female (Jenny)
+- 2: US Female (Aria)
+- 3: UK Male (Ryan)
+- 4: UK Female (Sonia)
+- 5-10: Various international voices

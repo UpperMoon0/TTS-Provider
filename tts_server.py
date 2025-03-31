@@ -16,7 +16,12 @@ class TTSServer:
         self.host = host
         self.port = port
         self.logger = logging.getLogger("TTSServer")
-        self.generator = TTSGenerator()
+        
+        # Get the default model from environment or use the default
+        default_model = os.environ.get("TTS_MODEL", "sesame")
+        self.logger.info(f"Using default TTS model: {default_model}")
+        
+        self.generator = TTSGenerator(model_name=default_model)
         self.files_dir = Path("generated_files")
         os.makedirs(self.files_dir, exist_ok=True)
         self.model_loading = False
@@ -86,6 +91,22 @@ class TTSServer:
                 self.request_queue.task_done()
             except Exception as e:
                 self.logger.error(f"Error processing queued request: {str(e)}")
+                
+    async def handle_info_request(self, websocket):
+        """Handle a request for server information"""
+        from tts_generator import TTSGenerator
+        
+        info = {
+            "status": "success",
+            "server_version": "1.1.0",
+            "current_model": self.generator.get_model_info(),
+            "available_models": TTSGenerator.list_available_models(),
+            "queue_size": self.request_queue.qsize(),
+            "model_loaded": self.generator.is_ready()
+        }
+        
+        self.logger.info("Sending server information to client")
+        await websocket.send(json.dumps(info))
     
     async def handle_client(self, websocket, path):
         """Handle client connections"""
@@ -95,6 +116,14 @@ class TTSServer:
             
             try:
                 request = json.loads(request_str)
+                
+                # Check for special commands
+                command = request.get("command", "")
+                
+                if command == "info":
+                    # Return server information
+                    await self.handle_info_request(websocket)
+                    return
                 
                 # If model is not ready, queue the request and inform the client
                 if not self.generator.is_ready():
@@ -145,6 +174,18 @@ class TTSServer:
             sample_rate = request.get("sample_rate", 24000)
             response_mode = request.get("response_mode", "stream")
             max_audio_length_ms = request.get("max_audio_length_ms", 30000)  # Default to 30 seconds if not specified
+            model_type = request.get("model", None)  # Optional model selection
+            
+            # Additional model-specific parameters
+            extra_params = {}
+            
+            # For Edge TTS, support voice styling parameters
+            if request.get("rate"):
+                extra_params["rate"] = request.get("rate")
+            if request.get("volume"):
+                extra_params["volume"] = request.get("volume")
+            if request.get("pitch"):
+                extra_params["pitch"] = request.get("pitch")
             
             text_length = len(text)
             text_preview = text[:100] + "..." if len(text) > 100 else text
@@ -156,18 +197,28 @@ class TTSServer:
             self.logger.info(f" - Sample rate: {sample_rate}")
             self.logger.info(f" - Response mode: {response_mode}")
             self.logger.info(f" - Max audio length: {max_audio_length_ms} ms")
+            if model_type:
+                self.logger.info(f" - Requested model: {model_type}")
             
             # Generate the audio
             try:
+                # If a specific model was requested, create a new generator with that model
+                model_generator = self.generator
+                if model_type and model_type.lower() != os.environ.get("TTS_MODEL", "sesame"):
+                    from tts_generator import TTSGenerator
+                    model_generator = TTSGenerator(model_name=model_type)
+                    self.logger.info(f"Using requested model: {model_type}")
+                
                 # Pass the sample_rate parameter explicitly to the generator
                 self.logger.info(f"Calling generator with text of {text_length} chars...")
                 start_time = asyncio.get_event_loop().time()
                 
-                audio_bytes = await self.generator.generate_speech(
+                audio_bytes = await model_generator.generate_speech(
                     text=text, 
                     speaker=speaker,
                     sample_rate=sample_rate,
-                    max_audio_length_ms=max_audio_length_ms
+                    max_audio_length_ms=max_audio_length_ms,
+                    **extra_params
                 )
                 
                 end_time = asyncio.get_event_loop().time()
