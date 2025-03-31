@@ -11,7 +11,7 @@ class TTSGenerator:
         self.logger = logging.getLogger("TTSGenerator")
         self.ready = False
         self.csm_generator = None
-        self.max_audio_length_ms = max_audio_length_ms or 30000  # Default to 30 seconds if None
+        self.max_audio_length_ms = max_audio_length_ms or 120000  # Default to 120 seconds (2 minutes) if None
         self.sample_rate = 24000  # Default sample rate
         self.model_loader = ModelLoader(logger=self.logger)
     
@@ -39,12 +39,12 @@ class TTSGenerator:
         """Check if the model is ready"""
         return self.ready
     
-    async def generate_speech(self, text, speaker=0, sample_rate=None):
+    async def generate_speech(self, text, speaker=0, sample_rate=None, max_audio_length_ms=None):
         """Generate speech asynchronously"""
         # Just pass through to the synchronous version
-        return self.generate_wav_bytes(text, speaker)
+        return self.generate_wav_bytes(text, speaker, max_audio_length_ms)
     
-    def generate_wav_bytes(self, text, speaker=0):
+    def generate_wav_bytes(self, text, speaker=0, max_audio_length_ms=None):
         """Generate WAV bytes from text using CSM-1B model"""
         if not text.strip():
             raise ValueError("Text cannot be empty")
@@ -53,7 +53,8 @@ class TTSGenerator:
             if not self.load_model():
                 raise RuntimeError("Model failed to load. Check logs for details.")
         
-        self.logger.info(f"Generating speech for speaker {speaker}: '{text}' ({len(text)} chars)")
+        text_length = len(text)
+        self.logger.info(f"Generating speech for speaker {speaker}: '{text[:100]}...' ({text_length} chars)")
         
         # Generate audio using CSM-1B
         try:
@@ -61,11 +62,18 @@ class TTSGenerator:
             if self.csm_generator is None:
                 raise RuntimeError("CSM generator model is not loaded")
                 
-            # Get max audio length for the model
-            max_audio_length = self.max_audio_length_ms
+            # Get max audio length for the model - use the provided value or fall back to default
+            # Force a higher value to ensure we get complete audio
+            if max_audio_length_ms is None or max_audio_length_ms < 300000:
+                max_audio_length = 300000  # Explicitly set to 5 minutes (300,000 ms)
+                self.logger.info(f"Using FORCED max audio length: {max_audio_length} ms (overriding provided value: {max_audio_length_ms})")
+            else:
+                max_audio_length = max_audio_length_ms
+                self.logger.info(f"Using provided max audio length: {max_audio_length} ms")
             
             # Debug log about actual generation
-            self.logger.info(f"Calling CSM model with text: '{text[:50]}...' (truncated)")
+            self.logger.info(f"Calling CSM model with text: '{text[:100]}...' ({text_length} chars)")
+            self.logger.info(f"Estimated audio length: ~{(text_length / 20) * 1000:.0f} ms ({text_length / 20:.1f} seconds) at average speech rate")
             
             # Generate audio using CSM-1B
             audio_tensor = self.csm_generator.generate(
@@ -82,6 +90,11 @@ class TTSGenerator:
                 raise RuntimeError("CSM model returned None instead of audio tensor")
                 
             self.logger.info(f"Generated audio tensor with shape: {audio_tensor.shape}")
+            if hasattr(audio_tensor, 'shape') and len(audio_tensor.shape) > 0:
+                duration_seconds = audio_tensor.shape[-1] / self.sample_rate
+                self.logger.info(f"Estimated audio duration: {duration_seconds:.2f} seconds")
+                if duration_seconds < (text_length / 20) * 0.8:  # If much shorter than expected
+                    self.logger.warning(f"WARNING: Generated audio seems too short ({duration_seconds:.2f}s) for the input text ({text_length} chars)")
             
             # Convert to WAV format using torchaudio
             wav_io = io.BytesIO()
@@ -91,10 +104,12 @@ class TTSGenerator:
             
             torchaudio.save(wav_io, audio_tensor_2d, self.sample_rate, format='wav')
             wav_io.seek(0)
+            wav_bytes = wav_io.read()
             
             # Success
-            self.logger.info(f"Converted audio to WAV format, size: {wav_io.getbuffer().nbytes} bytes")
-            return wav_io.read()
+            wav_size_kb = len(wav_bytes) / 1024
+            self.logger.info(f"Converted audio to WAV format, size: {wav_size_kb:.1f} KB ({len(wav_bytes)} bytes)")
+            return wav_bytes
             
         except Exception as e:
             self.logger.error(f"Error generating TTS audio: {str(e)}")

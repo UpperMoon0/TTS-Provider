@@ -112,8 +112,9 @@ class TTSClient:
             metadata = json.loads(metadata_str)
             self.logger.info(f"Received metadata: {json.dumps(metadata)}")
             
-            # Handle model loading status
-            if metadata.get("status") == "loading":
+            # Handle model loading or queued status
+            status = metadata.get("status")
+            if status == "loading":
                 self.logger.info("Model is loading, waiting for completion...")
                 metadata_str = await asyncio.wait_for(
                     self.websocket.recv(),
@@ -121,10 +122,21 @@ class TTSClient:
                 )
                 metadata = json.loads(metadata_str)
                 self.logger.info(f"Updated metadata: {json.dumps(metadata)}")
+            elif status == "queued":
+                queue_position = metadata.get("queue_position", "unknown")
+                self.logger.info(f"Request queued (position: {queue_position}), waiting for processing...")
+                
+                # Wait for the server to process our request from the queue
+                metadata_str = await asyncio.wait_for(
+                    self.websocket.recv(),
+                    timeout=self.timeout
+                )
+                metadata = json.loads(metadata_str)
+                self.logger.info(f"Request processed from queue: {json.dumps(metadata)}")
             
             # Check for successful status
             if metadata.get("status") != "success":
-                error_msg = metadata.get("error", "Unknown error")
+                error_msg = metadata.get("message", "Unknown error")
                 self.logger.error(f"TTS generation failed: {error_msg}")
                 return False
             

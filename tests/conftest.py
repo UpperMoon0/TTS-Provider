@@ -159,9 +159,10 @@ async def real_tts_server(available_port, logger, request):
         # Optionally preload the model to avoid timeouts during tests
         if request.config.getoption("--preload-model", False):
             logger.info("Preloading TTS model (this may take a while)...")
-            # Add preloading logic here if needed
-            model_loaded = True
-            logger.info("TTS model preloaded successfully")
+            # Call the preload_model method directly
+            await server.preload_model()
+            model_loaded = server.model_loaded
+            logger.info(f"TTS model preloaded successfully: {model_loaded}")
 
         async def run_server():
             nonlocal server_instance
@@ -178,6 +179,10 @@ async def real_tts_server(available_port, logger, request):
                     max_size=None,
                     max_queue=None
                 )
+                
+                # Start the queue processor if model is loaded
+                if server.model_loaded and server.queue_processor_task is None:
+                    server.queue_processor_task = asyncio.create_task(server.process_queued_requests())
                 
                 startup_event.set()
                 await asyncio.Future()
