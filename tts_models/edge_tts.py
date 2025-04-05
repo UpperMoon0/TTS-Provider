@@ -14,15 +14,8 @@ class EdgeTTSModel(BaseTTSModel):
         0: "en-US-GuyNeural",           # Default male voice (Narrator)
         1: "en-US-JennyNeural",         # Default female voice (Jane)
         2: "en-US-DavisNeural",         # Different male voice (Valentino)
-        3: "en-GB-RyanNeural",          # British male voice
-        4: "en-GB-SoniaNeural",         # British female voice 
-        5: "en-AU-WilliamNeural",       # Australian male voice
-        6: "en-AU-NatashaNeural",       # Australian female voice
-        7: "en-CA-LiamNeural",          # Canadian male voice
-        8: "en-CA-ClaraNeural",         # Canadian female voice
-        9: "en-IN-PrabhatNeural",       # Indian male voice
-        10: "en-IN-NeerjaNeural",       # Indian female voice
-        # Add more voices as needed
+        3: "en-GB-SoniaNeural",         # British female voice (Sonia)
+        # Only 4 voices are supported
     }
     
     # Fallback voices for each primary voice
@@ -30,7 +23,6 @@ class EdgeTTSModel(BaseTTSModel):
         "en-US-GuyNeural": ["en-US-DavisNeural", "en-GB-RyanNeural"],
         "en-US-JennyNeural": ["en-US-AriaNeural", "en-GB-SoniaNeural"],
         "en-US-DavisNeural": ["en-US-GuyNeural", "en-GB-RyanNeural"],
-        "en-GB-RyanNeural": ["en-US-GuyNeural", "en-US-DavisNeural"],
         "en-GB-SoniaNeural": ["en-US-JennyNeural", "en-US-AriaNeural"]
     }
     
@@ -85,14 +77,7 @@ class EdgeTTSModel(BaseTTSModel):
             0: "US Male (Guy)",
             1: "US Female (Jenny)",
             2: "US Male (Davis)",
-            3: "UK Male (Ryan)",
-            4: "UK Female (Sonia)",
-            5: "Australian Male (William)",
-            6: "Australian Female (Natasha)",
-            7: "Canadian Male (Liam)",
-            8: "Canadian Female (Clara)",
-            9: "Indian Male (Prabhat)",
-            10: "Indian Female (Neerja)",
+            3: "UK Female (Sonia)",
         }
     
     def _sanitize_text(self, text: str) -> str:
@@ -141,12 +126,16 @@ class EdgeTTSModel(BaseTTSModel):
         # Get voice name from speaker ID, fallback to default if not found
         voice = self.VOICE_MAPPING.get(speaker, self.VOICE_MAPPING[0])
         
-        # Log voice without any SSML modifications
+        # Check if any rate, volume, or pitch parameters were passed
+        if any(param in kwargs for param in ["rate", "volume", "pitch"]):
+            self.logger.warning("Rate, volume, and pitch parameters are not supported in this implementation. Using default voice settings only.")
+        
+        # Log voice information
         self.logger.info(f"Generating speech using Edge TTS:")
         self.logger.info(f" - Text length: {len(text)} chars")
         self.logger.info(f" - Text preview: '{text[:100]}...' (truncated)" if len(text) > 100 else f" - Text: '{text}'")
         self.logger.info(f" - Voice: {voice} (speaker ID: {speaker})")
-        self.logger.info(f" - Using default voice parameters (no SSML modifications)")
+        self.logger.info(f" - Using default voice parameters only (SSML modifications not allowed)")
         
         # Verify the voice exists
         if not await self._verify_voice_exists(voice):
@@ -163,6 +152,9 @@ class EdgeTTSModel(BaseTTSModel):
                 
                 # Create communication object - without any SSML modifications
                 communicate = edge_tts.Communicate(text, current_voice)
+                
+                # Explicitly not setting any rate, volume, or pitch parameters
+                # to ensure we use default voice characteristics
                 
                 # Use a memory buffer to store the audio
                 buffer = io.BytesIO()

@@ -2,8 +2,8 @@
 
 A flexible WebSocket-based Text-to-Speech service that supports multiple TTS backends. Currently supports:
 
-- Sesame CSM-1B (default)
-- Microsoft Edge TTS
+- Microsoft Edge TTS (default)
+- Sesame CSM-1B
 
 ## Installation
 
@@ -15,29 +15,28 @@ A flexible WebSocket-based Text-to-Speech service that supports multiple TTS bac
 
 ## Running the Server
 
-### Default (Sesame CSM-1B)
+### Default (Microsoft Edge TTS)
 
-Run the server with Sesame CSM-1B as the default model:
+Run the server with Microsoft Edge TTS as the default model (this is the default configuration):
 
 ```bash
-# On Linux/Mac
-./run_with_sesame.sh
-
-# Or directly
+# Default command (uses Edge TTS)
 python -m run_server
-```
 
-### Using Edge TTS
-
-Run the server with Microsoft Edge TTS as the default model:
-
-```bash
-# On Linux/Mac
-./run_with_edge_tts.sh
-
-# Or directly
+# Or explicitly specify Edge TTS
 python -m run_server --model edge
 ```
+
+### Using Sesame CSM-1B
+
+Run the server with Sesame CSM-1B as the TTS model:
+
+```bash
+# Specify Sesame as the model
+python -m run_server --model sesame
+```
+
+Note: The Sesame CSM-1B model is loaded on-demand when the first request that uses it is received, not at startup. This helps reduce startup time and memory usage until the model is actually needed.
 
 ## Client Usage
 
@@ -59,7 +58,7 @@ async def main():
         info = await client.get_server_info()
         print(f"Available models: {info.get('available_models')}")
         
-        # Generate speech with default model
+        # Generate speech with default model (Edge TTS)
         await client.generate_speech(
             text="Hello, this is a test.",
             output_path="output.wav"
@@ -67,12 +66,17 @@ async def main():
         
         # Generate speech with specific model
         await client.generate_speech(
+            text="Hello, this is Sesame CSM speaking.",
+            output_path="output_sesame.wav",
+            model="sesame"
+        )
+        
+        # Generate speech with Edge TTS
+        await client.generate_speech(
             text="Hello, this is Edge TTS speaking.",
             output_path="output_edge.wav",
             model="edge",
-            # Edge TTS specific parameters
-            rate="+10%",  # 10% faster
-            volume="+20%"  # 20% louder
+            speaker=2  # Use the Davis voice
         )
         
     finally:
@@ -85,7 +89,7 @@ asyncio.run(main())
 
 The TTS Provider supports a unified speaker ID system across different models. You can use the same integer speaker IDs (0-3) regardless of which model you're using.
 
-- **Simple usage**: Just provide a speaker ID as an integer (0-3), and it will be automatically mapped to the appropriate voice based on the model being used.
+- **Simple usage**: Just provide a speaker ID as an integer, and it will be automatically mapped to the appropriate voice based on the model being used.
 - **Cross-model consistency**: The same speaker IDs work with both Sesame CSM and Edge TTS models.
 
 ### Speaker ID Reference Table
@@ -118,24 +122,23 @@ Basic request format:
   "speaker": 0,  
   "sample_rate": 24000,
   "response_mode": "stream",
-  "model_type": "sesame"  // Optional, specify model type
+  "model": "edge"  // Optional, specify model type (edge or sesame)
 }
 ```
 
-#### Edge TTS Specific Parameters
+#### Edge TTS Voice Selection
 
-When using Edge TTS, you can include additional parameters:
+When using Edge TTS, you can only specify which voice to use via the speaker ID. The Edge TTS implementation uses only default voice parameters - no customization of rate, volume or pitch is allowed:
 
 ```json
 {
   "text": "Text to convert to speech",
   "speaker": 0,
-  "model_type": "edge",
-  "rate": "+10%",
-  "volume": "+20%",
-  "pitch": "-5%"
+  "model": "edge"
 }
 ```
+
+**Important Note:** For Edge TTS, voice modification parameters like `rate`, `volume`, and `pitch` are not supported and will be ignored. Edge TTS will always use the natural, default voice characteristics to ensure maximum reliability and consistent sound quality.
 
 ### Server Information Request
 
@@ -148,3 +151,8 @@ To get information about the server and available models:
 ```
 
 The response includes the available speaker mappings to help you select the appropriate voice.
+
+## Model Loading Behavior
+
+- **Edge TTS**: Loaded immediately at startup since it's lightweight
+- **Sesame CSM-1B**: Loaded on-demand when the first request using it is received
