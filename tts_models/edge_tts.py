@@ -1,6 +1,7 @@
 import io
 import logging
 import asyncio
+import re
 import edge_tts
 from typing import Dict, List, Tuple
 from .base_model import BaseTTSModel
@@ -22,6 +23,15 @@ class EdgeTTSModel(BaseTTSModel):
         9: "en-IN-PrabhatNeural",       # Indian male voice
         10: "en-IN-NeerjaNeural",       # Indian female voice
         # Add more voices as needed
+    }
+    
+    # Fallback voices for each primary voice
+    FALLBACK_VOICES = {
+        "en-US-GuyNeural": ["en-US-DavisNeural", "en-GB-RyanNeural"],
+        "en-US-JennyNeural": ["en-US-AriaNeural", "en-GB-SoniaNeural"],
+        "en-US-DavisNeural": ["en-US-GuyNeural", "en-GB-RyanNeural"],
+        "en-GB-RyanNeural": ["en-US-GuyNeural", "en-US-DavisNeural"],
+        "en-GB-SoniaNeural": ["en-US-JennyNeural", "en-US-AriaNeural"]
     }
     
     def __init__(self):
@@ -85,54 +95,125 @@ class EdgeTTSModel(BaseTTSModel):
             10: "Indian Female (Neerja)",
         }
     
+    def _sanitize_text(self, text: str) -> str:
+        """
+        Sanitize text to avoid issues with Edge TTS.
+        
+        Some characters or patterns can cause issues with the Edge TTS service.
+        This function removes or replaces them to increase the chance of successful generation.
+        """
+        # Replace special quotes with standard quotes
+        text = text.replace('"', '"').replace('"', '"')
+        text = text.replace("'", "'").replace("'", "'")
+        
+        # Replace special dashes/hyphens with standard hyphen
+        text = text.replace('—', '-').replace('–', '-')
+        
+        # Remove any control characters
+        text = re.sub(r'[\x00-\x1F\x7F]', '', text)
+        
+        # Ensure there are no excessive spaces
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Ensure there's at least a period at the end if there's no ending punctuation
+        if text and not text[-1] in ['.', '!', '?', ':', ';']:
+            text = text + '.'
+            
+        return text
+    
+    async def _verify_voice_exists(self, voice_name: str) -> bool:
+        """Verify that a voice exists in the Edge TTS service"""
+        voices = await self._get_available_voices()
+        return any(v["ShortName"] == voice_name for v in voices)
+    
     async def generate_speech(self, text: str, speaker: int = 0, **kwargs) -> bytes:
         """Generate speech from text using Edge TTS"""
         if not text.strip():
             raise ValueError("Text cannot be empty")
         
+        # Sanitize text to avoid issues
+        original_text = text
+        text = self._sanitize_text(text)
+        
+        if text != original_text:
+            self.logger.info(f"Text was sanitized for better compatibility")
+            
         # Get voice name from speaker ID, fallback to default if not found
         voice = self.VOICE_MAPPING.get(speaker, self.VOICE_MAPPING[0])
         
-        # Optional parameters
-        rate = kwargs.get("rate", "+0%")  # Can be e.g. "+10%" or "-5%"
-        volume = kwargs.get("volume", "+0%")  # Can be e.g. "+10%" or "-5%"
-        pitch = kwargs.get("pitch", "+0Hz")  # Can be e.g. "+10Hz" or "-5Hz"
-        
+        # Log voice without any SSML modifications
         self.logger.info(f"Generating speech using Edge TTS:")
-        self.logger.info(f" - Text: '{text[:100]}...' ({len(text)} chars)")
+        self.logger.info(f" - Text length: {len(text)} chars")
+        self.logger.info(f" - Text preview: '{text[:100]}...' (truncated)" if len(text) > 100 else f" - Text: '{text}'")
         self.logger.info(f" - Voice: {voice} (speaker ID: {speaker})")
-        self.logger.info(f" - Rate: {rate}, Volume: {volume}, Pitch: {pitch}")
+        self.logger.info(f" - Using default voice parameters (no SSML modifications)")
         
+        # Verify the voice exists
+        if not await self._verify_voice_exists(voice):
+            self.logger.warning(f"Voice {voice} doesn't exist in Edge TTS. Using default voice instead.")
+            voice = "en-US-GuyNeural"  # Default fallback voice
+            
+        # List of voices to try (primary + fallbacks)
+        voices_to_try = [voice] + self.FALLBACK_VOICES.get(voice, [])
+        
+        errors = []
+        for attempt, current_voice in enumerate(voices_to_try):
+            try:
+                self.logger.info(f"Attempt {attempt+1}/{len(voices_to_try)}: Using voice {current_voice}")
+                
+                # Create communication object - without any SSML modifications
+                communicate = edge_tts.Communicate(text, current_voice)
+                
+                # Use a memory buffer to store the audio
+                buffer = io.BytesIO()
+                
+                # Generate the audio
+                self.logger.info("Generating audio with Edge TTS...")
+                received_any_data = False
+                
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        buffer.write(chunk["data"])
+                        received_any_data = True
+                
+                # Check if we actually received audio
+                buffer.seek(0)
+                audio_data = buffer.read()
+                
+                if len(audio_data) == 0:
+                    self.logger.error(f"No audio data received from Edge TTS using voice {current_voice}")
+                    errors.append(f"No audio data received for voice {current_voice}")
+                    continue
+                
+                self.logger.info(f"Generated {len(audio_data)/1024:.1f} KB of audio with Edge TTS using voice {current_voice}")
+                return audio_data
+                
+            except Exception as e:
+                self.logger.error(f"Error generating speech with Edge TTS voice {current_voice}: {str(e)}")
+                errors.append(f"Voice {current_voice}: {str(e)}")
+                continue
+        
+        # If we reach here, all attempts failed
+        error_details = "\n".join(errors)
+        error_message = f"Failed to generate speech with Edge TTS after trying {len(voices_to_try)} voices. Details:\n{error_details}"
+        self.logger.error(error_message)
+        
+        # Try one last attempt with a minimal text
         try:
-            # Create communication object
-            communicate = edge_tts.Communicate(text, voice)
-            
-            # Set additional properties if provided
-            if rate != "+0%":
-                communicate.rate = rate
-            if volume != "+0%":
-                communicate.volume = volume
-            if pitch != "+0Hz":
-                communicate.pitch = pitch
-            
-            # Use a memory buffer to store the audio
+            self.logger.info("Attempting last-ditch generation with minimal text...")
+            communicate = edge_tts.Communicate("This is a test.", "en-US-GuyNeural")
             buffer = io.BytesIO()
-            
-            # Generate the audio
-            self.logger.info("Generating audio with Edge TTS...")
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     buffer.write(chunk["data"])
-            
-            # Get the audio data
             buffer.seek(0)
             audio_data = buffer.read()
             
-            self.logger.info(f"Generated {len(audio_data)/1024:.1f} KB of audio with Edge TTS")
-            return audio_data
-            
+            if len(audio_data) > 0:
+                self.logger.info("Generated fallback audio with minimal text")
+                return audio_data
         except Exception as e:
-            self.logger.error(f"Error generating speech with Edge TTS: {str(e)}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-            raise RuntimeError(f"Failed to generate speech with Edge TTS: {str(e)}")
+            self.logger.error(f"Even minimal text generation failed: {str(e)}")
+        
+        # All attempts failed
+        raise RuntimeError(f"Failed to generate speech with Edge TTS: {error_message}")
