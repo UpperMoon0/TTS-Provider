@@ -61,6 +61,10 @@ async def test_client_tts_generation(tts_server, logger):
     port = server_info["port"]
     server = server_info["server"]
     
+    # Ensure the mock generator has the model_name attribute for speaker mapping
+    if not hasattr(server.generator, 'model_name'):
+        server.generator.model_name = 'edge'
+    
     # Create a temp file for output
     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
         output_file = temp_file.name
@@ -133,22 +137,8 @@ async def test_client_tts_generation(tts_server, logger):
                         assert wav_file.getframerate() == TEST_SAMPLE_RATE, f"Expected sample rate {TEST_SAMPLE_RATE}"
                         assert wav_file.getnframes() > 0, "No audio frames in file"
                     
-                    # Play the generated audio
-                    try:
-                        # Use sounddevice for audio playback (needs to be installed)
-                        import sounddevice as sd
-                        import soundfile as sf
-                        
-                        logger.info(f"Playing generated audio from {output_file}...")
-                        data, samplerate = sf.read(output_file)
-                        sd.play(data, samplerate)
-                        sd.wait()  # Wait until playback is finished
-                        logger.info("Audio playback completed")
-                    except ImportError:
-                        logger.warning("Audio playback skipped: sounddevice or soundfile not installed")
-                        logger.info("To enable audio playback, install with: pip install sounddevice soundfile")
-                    except Exception as e:
-                        logger.warning(f"Failed to play audio: {str(e)}")
+                    # Skip audio playback to avoid dependencies and slow tests
+                    logger.info("Audio playback skipped for faster testing")
                     
                     logger.info("Client TTS generation test passed")
                     break  # Success, exit the retry loop
@@ -177,6 +167,10 @@ async def test_client_error_handling(tts_server, logger):
     server_info = await anext(tts_server)
     port = server_info["port"]
     server = server_info["server"]
+    
+    # Ensure the mock generator has the model_name attribute for speaker mapping
+    if not hasattr(server.generator, 'model_name'):
+        server.generator.model_name = 'edge'
     
     # Set up mock generator to reject requests without text
     # This simulates the error handling we want to test

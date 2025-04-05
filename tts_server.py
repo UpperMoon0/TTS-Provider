@@ -6,12 +6,22 @@ import os
 import uuid
 from pathlib import Path
 import websockets
-from tts_generator import TTSGenerator
 
 class TTSServer:
     """WebSocket server for text-to-speech conversion"""
     
-    def __init__(self, host="0.0.0.0", port=8765):
+    # Speaker mapping table for cross-model compatibility
+    # When using integer speaker IDs, this helps map them consistently
+    # regardless of which model is used
+    SPEAKER_MAPPING = {
+        # Generic mappings that work across models
+        0: {"description": "Default Male Voice", "sesame": 0, "edge": 0},   # Default Male (US Guy)
+        1: {"description": "Default Female Voice", "sesame": 1, "edge": 1}, # Default Female (US Jenny)
+        2: {"description": "Alternative Male Voice", "sesame": 0, "edge": 2},  # Alternative Male (US Davis)
+        3: {"description": "Alternative Female Voice", "sesame": 1, "edge": 4}, # Alternative Female (UK Sonia)
+    }
+    
+    def __init__(self, host="0.0.0.0", port=9000):
         """Initialize the TTS server with host and port"""
         self.host = host
         self.port = port
@@ -21,7 +31,7 @@ class TTSServer:
         default_model = os.environ.get("TTS_MODEL", "sesame")
         self.logger.info(f"Using default TTS model: {default_model}")
         
-        self.generator = TTSGenerator(model_name=default_model)
+        self.generator = None
         self.files_dir = Path("generated_files")
         os.makedirs(self.files_dir, exist_ok=True)
         self.model_loading = False
@@ -29,6 +39,24 @@ class TTSServer:
         self.request_queue = asyncio.Queue()
         self.queue_processor_task = None
         
+    def map_speaker_id(self, speaker_id: int, model_type: str) -> int:
+        """Map a generic speaker ID to a model-specific speaker ID"""
+        # Default to the same speaker ID if no mapping exists
+        if speaker_id not in self.SPEAKER_MAPPING:
+            return speaker_id
+            
+        # Get the mapping for this speaker
+        mapping = self.SPEAKER_MAPPING[speaker_id]
+        
+        # Map to the appropriate model's speaker ID
+        if model_type.lower() in ["sesame", "csm"]:
+            return mapping.get("sesame", 0)
+        elif model_type.lower() in ["edge", "edge-tts"]:
+            return mapping.get("edge", 0)
+        else:
+            # For unknown models, return the original ID
+            return speaker_id
+    
     def run(self):
         """Run the WebSocket server"""
         self.logger.info(f"Starting TTS WebSocket server on {self.host}:{self.port}")
@@ -36,6 +64,14 @@ class TTSServer:
     
     async def start_server(self):
         """Start the WebSocket server"""
+        # Lazy import to delay loading the model until needed
+        from tts_generator import TTSGenerator
+        
+        # Initialize the generator here to avoid loading the model too early
+        if self.generator is None:
+            default_model = os.environ.get("TTS_MODEL", "sesame")
+            self.generator = TTSGenerator(model_name=default_model)
+            
         # Start the queue processor task if the model is already loaded
         if self.model_loaded and self.queue_processor_task is None:
             self.queue_processor_task = asyncio.create_task(self.process_queued_requests())
@@ -44,10 +80,11 @@ class TTSServer:
             self.handle_client, 
             self.host, 
             self.port,
-            ping_interval=None,
-            ping_timeout=None,
-            max_size=None, 
-            max_queue=None
+            ping_interval=20,      # Send ping frames every 20 seconds
+            ping_timeout=30,       # Wait 30 seconds for pong response
+            close_timeout=10,      # Wait 10 seconds for close frame
+            max_size=10 * 1024 * 1024,  # Increase max message size to 10MB
+            max_queue=100          # Allow up to 100 pending messages
         ):
             self.logger.info(f"Server started on {self.host}:{self.port}")
             await asyncio.Future()  # Run forever
@@ -96,13 +133,25 @@ class TTSServer:
         """Handle a request for server information"""
         from tts_generator import TTSGenerator
         
+        # Get model info and add speaker mapping information
+        model_info = self.generator.get_model_info()
+        
+        # Get available models
+        available_models = TTSGenerator.list_available_models()
+        
+        # Add speaker mapping information for client reference
+        speaker_mapping = {}
+        for speaker_id, mapping in self.SPEAKER_MAPPING.items():
+            speaker_mapping[speaker_id] = mapping["description"]
+        
         info = {
             "status": "success",
             "server_version": "1.1.0",
-            "current_model": self.generator.get_model_info(),
-            "available_models": TTSGenerator.list_available_models(),
+            "current_model": model_info,
+            "available_models": available_models,
             "queue_size": self.request_queue.qsize(),
-            "model_loaded": self.generator.is_ready()
+            "model_loaded": self.generator.is_ready(),
+            "speaker_mapping": speaker_mapping
         }
         
         self.logger.info("Sending server information to client")
@@ -174,7 +223,10 @@ class TTSServer:
             sample_rate = request.get("sample_rate", 24000)
             response_mode = request.get("response_mode", "stream")
             max_audio_length_ms = request.get("max_audio_length_ms", 30000)  # Default to 30 seconds if not specified
-            model_type = request.get("model", None)  # Optional model selection
+            model_type = request.get("model", self.generator.model_name)  # Optional model selection
+            
+            # Map the speaker ID to the appropriate model-specific ID
+            mapped_speaker = self.map_speaker_id(speaker, model_type)
             
             # Additional model-specific parameters
             extra_params = {}
@@ -187,13 +239,17 @@ class TTSServer:
             if request.get("pitch"):
                 extra_params["pitch"] = request.get("pitch")
             
+            # If a specific model was requested, add it to the parameters
+            if model_type:
+                extra_params["model"] = model_type
+            
             text_length = len(text)
             text_preview = text[:100] + "..." if len(text) > 100 else text
             
             self.logger.info(f"Processing request:")
             self.logger.info(f" - Text length: {text_length} chars")
             self.logger.info(f" - Text preview: '{text_preview}'")
-            self.logger.info(f" - Speaker: {speaker}")
+            self.logger.info(f" - Original speaker: {speaker}, Mapped speaker: {mapped_speaker}")
             self.logger.info(f" - Sample rate: {sample_rate}")
             self.logger.info(f" - Response mode: {response_mode}")
             self.logger.info(f" - Max audio length: {max_audio_length_ms} ms")
@@ -202,20 +258,13 @@ class TTSServer:
             
             # Generate the audio
             try:
-                # If a specific model was requested, create a new generator with that model
-                model_generator = self.generator
-                if model_type and model_type.lower() != os.environ.get("TTS_MODEL", "sesame"):
-                    from tts_generator import TTSGenerator
-                    model_generator = TTSGenerator(model_name=model_type)
-                    self.logger.info(f"Using requested model: {model_type}")
-                
-                # Pass the sample_rate parameter explicitly to the generator
+                # Pass the model_type through extra_params to support dynamic model loading
                 self.logger.info(f"Calling generator with text of {text_length} chars...")
                 start_time = asyncio.get_event_loop().time()
                 
-                audio_bytes = await model_generator.generate_speech(
+                audio_bytes = await self.generator.generate_speech(
                     text=text, 
-                    speaker=speaker,
+                    speaker=mapped_speaker,  # Use the mapped speaker ID
                     sample_rate=sample_rate,
                     max_audio_length_ms=max_audio_length_ms,
                     **extra_params

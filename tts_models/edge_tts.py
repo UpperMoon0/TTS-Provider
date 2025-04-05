@@ -10,9 +10,9 @@ class EdgeTTSModel(BaseTTSModel):
     
     # List of Edge TTS voices with mapping to our numeric speaker IDs
     VOICE_MAPPING = {
-        0: "en-US-GuyNeural",           # Default male voice
-        1: "en-US-JennyNeural",         # Default female voice
-        2: "en-US-AriaNeural",          # Alternative female voice
+        0: "en-US-GuyNeural",           # Default male voice (Narrator)
+        1: "en-US-JennyNeural",         # Default female voice (Jane)
+        2: "en-US-DavisNeural",         # Different male voice (Valentino)
         3: "en-GB-RyanNeural",          # British male voice
         4: "en-GB-SoniaNeural",         # British female voice 
         5: "en-AU-WilliamNeural",       # Australian male voice
@@ -74,7 +74,7 @@ class EdgeTTSModel(BaseTTSModel):
         return {
             0: "US Male (Guy)",
             1: "US Female (Jenny)",
-            2: "US Female (Aria)",
+            2: "US Male (Davis)",
             3: "UK Male (Ryan)",
             4: "UK Female (Sonia)",
             5: "Australian Male (William)",
@@ -135,4 +135,4 @@ class EdgeTTSModel(BaseTTSModel):
             self.logger.error(f"Error generating speech with Edge TTS: {str(e)}")
             import traceback
             self.logger.error(traceback.format_exc())
-            raise RuntimeError(f"Failed to generate speech with Edge TTS: {str(e)}") 
+            raise RuntimeError(f"Failed to generate speech with Edge TTS: {str(e)}")

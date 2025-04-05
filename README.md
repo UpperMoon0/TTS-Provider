@@ -81,6 +81,24 @@ async def main():
 asyncio.run(main())
 ```
 
+## Speaker ID Mapping
+
+The TTS Provider supports a unified speaker ID system across different models. You can use the same integer speaker IDs (0-3) regardless of which model you're using.
+
+- **Simple usage**: Just provide a speaker ID as an integer (0-3), and it will be automatically mapped to the appropriate voice based on the model being used.
+- **Cross-model consistency**: The same speaker IDs work with both Sesame CSM and Edge TTS models.
+
+### Speaker ID Reference Table
+
+| ID | Description | Sesame CSM | Edge TTS |
+|----|-------------|------------|----------|
+| 0 | Default Male Voice | Male Voice | US Male (Guy) |
+| 1 | Default Female Voice | Female Voice | US Female (Jenny) |
+| 2 | Alternative Male Voice | Male Voice | US Male (Davis) |
+| 3 | Alternative Female Voice | Female Voice | UK Female (Sonia) |
+
+*Note*: For Sesame CSM, male voices (0 and 2) both map to speaker 0, and female voices (1 and 3) both map to speaker 1, since Sesame only supports two distinct voices.
+
 ## Selecting Models
 
 Clients can select which model to use in each request by including a `model` parameter:
@@ -129,16 +147,4 @@ To get information about the server and available models:
 }
 ```
 
-## Speaker IDs
-
-### Sesame CSM-1B Speakers
-- 0: Male voice
-- 1: Female voice
-
-### Edge TTS Speakers
-- 0: US Male (Guy)
-- 1: US Female (Jenny)
-- 2: US Female (Aria)
-- 3: UK Male (Ryan)
-- 4: UK Female (Sonia)
-- 5-10: Various international voices
+The response includes the available speaker mappings to help you select the appropriate voice.
