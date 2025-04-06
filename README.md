@@ -13,27 +13,36 @@ A flexible WebSocket-based Text-to-Speech service that supports multiple TTS bac
    pip install -r requirements.txt
    ```
 
+### Installing Sesame CSM-1B Model
+
+To use the Sesame CSM-1B model, you'll need to:
+
+1. Login to Hugging Face (you need to accept the model terms):
+   ```bash
+   huggingface-cli login
+   ```
+
+2. Clone the CSM GitHub repository:
+   ```bash
+   git clone https://github.com/SesameAILabs/csm.git
+   cd csm
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+
+3. Download the model files:
+   The model will be automatically downloaded from Hugging Face when first used, but you need to have accepted the terms on the [Sesame CSM-1B model page](https://huggingface.co/sesame/csm-1b).
+
+   Note: The model requires access to both `sesame/csm-1b` and `meta-llama/Llama-3.2-1B` on Hugging Face.
+
+4. Make sure the model files are placed in the correct location (typically under the `models/csm-1b/` directory).
+
 ## Running the Server
-
-### Default (Microsoft Edge TTS)
-
-Run the server with Microsoft Edge TTS as the default model (this is the default configuration):
 
 ```bash
 # Default command (uses Edge TTS)
 python -m run_server
-
-# Or explicitly specify Edge TTS
-python -m run_server --model edge
-```
-
-### Using Sesame CSM-1B
-
-Run the server with Sesame CSM-1B as the TTS model:
-
-```bash
-# Specify Sesame as the model
-python -m run_server --model sesame
 ```
 
 Note: The Sesame CSM-1B model is loaded on-demand when the first request that uses it is received, not at startup. This helps reduce startup time and memory usage until the model is actually needed.

@@ -231,14 +231,6 @@ class TTSServer:
             # Additional model-specific parameters
             extra_params = {}
             
-            # For Edge TTS, support voice styling parameters
-            if request.get("rate"):
-                extra_params["rate"] = request.get("rate")
-            if request.get("volume"):
-                extra_params["volume"] = request.get("volume")
-            if request.get("pitch"):
-                extra_params["pitch"] = request.get("pitch")
-            
             # If a specific model was requested, add it to the parameters
             if model_type:
                 extra_params["model"] = model_type
