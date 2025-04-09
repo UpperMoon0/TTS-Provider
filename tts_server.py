@@ -30,9 +30,9 @@ class TTSServer:
         # Get the default model from environment or use the default
         default_model = os.environ.get("TTS_MODEL", "sesame")
         self.logger.info(f"Using default TTS model: {default_model}")
-        
         self.generator = None
-        self.files_dir = Path("generated_files")
+        # Use absolute path to ensure files are saved in the TTS-Provider directory
+        self.files_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "generated_files"
         os.makedirs(self.files_dir, exist_ok=True)
         self.model_loading = False
         self.model_loaded = False
@@ -291,8 +291,7 @@ class TTSServer:
                     await websocket.send(json.dumps(metadata))
                     self.logger.info(f"Saved audio to file: {filepath}")
                     
-                else:  # Default stream mode
-                    # Send metadata
+                else:  # Default stream mode                    # Send metadata
                     metadata = {
                         "status": "success",
                         "response_mode": "stream",
@@ -301,6 +300,9 @@ class TTSServer:
                         "format": "wav"
                     }
                     await websocket.send(json.dumps(metadata))
+                    
+                    # Adding delay to prevent connection issues
+                    await asyncio.sleep(0.5)
                     
                     # Check if we need to chunk the response (over ~1MB)
                     MAX_CHUNK_SIZE = 800000  # ~800KB to stay safely under 1MB limit
@@ -313,12 +315,16 @@ class TTSServer:
                             chunk = audio_bytes[i:i + MAX_CHUNK_SIZE]
                             await websocket.send(chunk)
                             self.logger.debug(f"Sent chunk {(i // MAX_CHUNK_SIZE) + 1}/{total_chunks} ({len(chunk)} bytes)")
-                        
+                            # Add a small delay between chunks
+                            await asyncio.sleep(0.1)
                         self.logger.info(f"Successfully sent {len(audio_bytes)} bytes of audio data in {total_chunks} chunks")
                     else:
                         # Send the audio data in one go
                         await websocket.send(audio_bytes)
                         self.logger.info(f"Successfully sent {len(audio_bytes)} bytes of audio data")
+                    
+                    # Add a delay before potentially closing the connection
+                    await asyncio.sleep(0.5)
                 
             except Exception as e:
                 error_msg = str(e)

@@ -5,6 +5,7 @@ import re
 import edge_tts
 from typing import Dict, List, Tuple
 from .base_model import BaseTTSModel
+from pydub import AudioSegment
 
 class EdgeTTSModel(BaseTTSModel):
     """Microsoft Edge TTS model implementation"""
@@ -148,13 +149,14 @@ class EdgeTTSModel(BaseTTSModel):
         errors = []
         for attempt, current_voice in enumerate(voices_to_try):
             try:
-                self.logger.info(f"Attempt {attempt+1}/{len(voices_to_try)}: Using voice {current_voice}")
+                self.logger.info(f"Attempt {attempt+1}/{len(voices_to_try)}: Using voice {current_voice}")                # Create communication object with default parameters only - no SSML modifications
+                self.logger.info(" - Using default voice parameters only (no SSML modifications)")
                 
-                # Create communication object - without any SSML modifications
-                communicate = edge_tts.Communicate(text, current_voice)
-                
-                # Explicitly not setting any rate, volume, or pitch parameters
-                # to ensure we use default voice characteristics
+                # Create communication object with default parameters
+                communicate = edge_tts.Communicate(
+                    text, 
+                    current_voice
+                )
                 
                 # Use a memory buffer to store the audio
                 buffer = io.BytesIO()
@@ -167,8 +169,7 @@ class EdgeTTSModel(BaseTTSModel):
                     if chunk["type"] == "audio":
                         buffer.write(chunk["data"])
                         received_any_data = True
-                
-                # Check if we actually received audio
+                  # Check if we actually received audio
                 buffer.seek(0)
                 audio_data = buffer.read()
                 
@@ -176,9 +177,36 @@ class EdgeTTSModel(BaseTTSModel):
                     self.logger.error(f"No audio data received from Edge TTS using voice {current_voice}")
                     errors.append(f"No audio data received for voice {current_voice}")
                     continue
+                  # Edge TTS typically returns MP3 data, but we need WAV format
+                # Convert to WAV format using pydub
+                self.logger.info(f"Converting Edge TTS audio data to WAV format (original size: {len(audio_data)/1024:.1f} KB)")
                 
-                self.logger.info(f"Generated {len(audio_data)/1024:.1f} KB of audio with Edge TTS using voice {current_voice}")
-                return audio_data
+                try:
+                    # Load MP3 data into AudioSegment
+                    audio_segment = AudioSegment.from_file(io.BytesIO(audio_data), format="mp3")
+                    
+                    # Export as WAV to a bytes buffer
+                    wav_buffer = io.BytesIO()
+                    audio_segment.export(wav_buffer, format="wav")
+                    wav_buffer.seek(0)
+                    wav_data = wav_buffer.read()
+                    
+                    # Calculate audio length in seconds
+                    audio_length_seconds = len(audio_segment) / 1000  # AudioSegment length is in milliseconds
+                    
+                    self.logger.info(f"Successfully converted to WAV format: {len(wav_data)/1024:.1f} KB")
+                    self.logger.info(f"Audio length: {audio_length_seconds:.2f} seconds ({len(wav_data)} bytes)")
+                    return wav_data
+                    
+                except Exception as conv_error:
+                    self.logger.error(f"Error converting MP3 to WAV: {str(conv_error)}")
+                    self.logger.warning("Returning original audio data without conversion")
+                    
+                    # Calculate approximate audio length in seconds (rough estimate)
+                    audio_length_seconds = len(audio_data) / 48000
+                    self.logger.info(f"Generated {len(audio_data)/1024:.1f} KB of audio with Edge TTS using voice {current_voice}")
+                    self.logger.info(f"Audio length: {audio_length_seconds:.2f} seconds ({len(audio_data)} bytes)")
+                    return audio_data
                 
             except Exception as e:
                 self.logger.error(f"Error generating speech with Edge TTS voice {current_voice}: {str(e)}")
