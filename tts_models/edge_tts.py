@@ -12,19 +12,10 @@ class EdgeTTSModel(BaseTTSModel):
     
     # List of Edge TTS voices with mapping to our numeric speaker IDs
     VOICE_MAPPING = {
-        0: "en-US-GuyNeural",           # Default male voice (Narrator)
-        1: "en-US-JennyNeural",         # Default female voice (Jane)
-        2: "en-US-DavisNeural",         # Different male voice (Valentino)
-        3: "en-GB-SoniaNeural",         # British female voice (Sonia)
-        # Only 4 voices are supported
-    }
-    
-    # Fallback voices for each primary voice
-    FALLBACK_VOICES = {
-        "en-US-GuyNeural": ["en-US-DavisNeural", "en-GB-RyanNeural"],
-        "en-US-JennyNeural": ["en-US-AriaNeural", "en-GB-SoniaNeural"],
-        "en-US-DavisNeural": ["en-US-GuyNeural", "en-GB-RyanNeural"],
-        "en-GB-SoniaNeural": ["en-US-JennyNeural", "en-US-AriaNeural"]
+        0: "en-US-ChristopherNeural",         
+        1: "en-US-JennyNeural",     
+        2: "en-US-DavisNeural",       
+        3: "en-US-AriaNeural",      
     }
     
     def __init__(self):
