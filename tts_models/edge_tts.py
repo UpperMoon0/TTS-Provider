@@ -135,7 +135,7 @@ class EdgeTTSModel(BaseTTSModel):
             voice = "en-US-GuyNeural"  # Default fallback voice
             
         # List of voices to try (primary + fallbacks)
-        voices_to_try = [voice] + self.FALLBACK_VOICES.get(voice, [])
+        voices_to_try = [voice]
         
         errors = []
         for attempt, current_voice in enumerate(voices_to_try):
