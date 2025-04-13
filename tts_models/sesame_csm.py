@@ -1,8 +1,6 @@
 import io
 import logging
-import os
 import torchaudio
-from pathlib import Path
 from .base_model import BaseTTSModel
 from model_loader import ModelLoader
 

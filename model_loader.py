@@ -1,7 +1,7 @@
+import importlib
 import os
 import logging
 import sys
-import importlib.util
 from pathlib import Path
 from huggingface_hub import snapshot_download
 from huggingface_hub.utils import LocalTokenNotFoundError
@@ -70,7 +70,7 @@ class ModelLoader:
         try:
             # Create a simple package structure mapping
             # This makes Python think 'csm' is a real module that points to our implementation
-            csm_impl_path = Path(__file__).parent / "Sesame-CSM-1b-Impl"
+            csm_impl_path = Path(__file__).parent / "Sesame-CSM-1b-Folk"
             if not csm_impl_path.exists():
                 self.logger.error(f"CSM implementation not found at {csm_impl_path}")
                 return False

@@ -1,0 +1,60 @@
+# Git
+.git/
+.gitignore
+
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache/build files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE / Editor specific
+.vscode/
+*.code-workspace
+.history/
+.idea/
+
+# Test cache/reports
+.pytest_cache/
+pytest.ini
+tests/
+
+# Runtime generated files/models (handled inside container)
+outputs/
+models/
+generated_files/
+*.log
+
+# Environment files (use build args or runtime env vars)
+.env
+
+# OS specific
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Docker specific
+Dockerfile
+.dockerignore
