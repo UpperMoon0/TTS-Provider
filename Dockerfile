@@ -34,9 +34,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Respects the .dockerignore file
 COPY . .
 
+# Copy the entrypoint script and make it executable
+COPY entrypoint.sh .
+RUN chmod +x /app/entrypoint.sh
+
 # Make port 9000 available to the world outside this container
 EXPOSE ${TTS_PORT}
 
-# Define the command to run the application
-# Uses the environment variables for host and port
-CMD ["python", "run_server.py", "--host", "${TTS_HOST}", "--port", "${TTS_PORT}"]
+# Set the entrypoint script
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Default command (can be overridden). Arguments passed here will be appended to the entrypoint command via "$@"
+# Since run_server.py handles defaults via argparse/env vars, an empty CMD is suitable.
+CMD []

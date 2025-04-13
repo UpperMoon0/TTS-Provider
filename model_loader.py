@@ -35,7 +35,7 @@ class ModelLoader:
                 snapshot_download(
                     repo_id="sesame/csm-1b",
                     local_dir=model_path,
-                    token=os.getenv("HUGGINGFACE_TOKEN"),  # Use token if available
+                    token=os.getenv("HF_TOKEN"),  # Use HF_TOKEN environment variable
                     force_download=True,  # Force download instead of using resume_download
                     proxies=None,
                     etag_timeout=100,
