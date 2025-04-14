@@ -6,7 +6,11 @@ Main script to run the TTS server
 import os
 import logging
 import argparse
+import logging
+import os
 from dotenv import load_dotenv
+
+from model_loader import ModelLoader # Import ModelLoader
 from tts_server import TTSServer
 
 def setup_logging():
@@ -24,7 +28,19 @@ def main():
     # Set up logging
     setup_logging()
     logger = logging.getLogger("TTS-Server-Main")
-    
+
+    # --- Pre-check and download models ---
+    logger.info("Checking for necessary models...")
+    try:
+        model_loader = ModelLoader(logger=logger)
+        # This call will trigger download if model path doesn't exist or is empty
+        model_path = model_loader.get_model_path()
+        logger.info(f"Model path verified: {model_path}")
+        # Optionally, you could add checks for other models here if needed
+    except Exception as e:
+        logger.error(f"Failed during model check/download: {e}. Exiting.")
+        return # Exit if model download fails critically
+
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Run the TTS server")
     parser.add_argument("--host", default=os.environ.get("TTS_HOST", "0.0.0.0"), help="Host to bind the server to")
