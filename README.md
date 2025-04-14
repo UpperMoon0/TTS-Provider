@@ -22,7 +22,7 @@ To use the Sesame CSM-1B model, you'll need to:
    huggingface-cli login
    ```
 
-2. Clone the CSM GitHub repository:
+2. Clone the CSM GitHub repository (might require some modifications to run without errors):
    ```bash
    git clone https://github.com/SesameAILabs/csm.git
    cd csm
