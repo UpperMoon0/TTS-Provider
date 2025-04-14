@@ -70,7 +70,7 @@ class ModelLoader:
         try:
             # Create a simple package structure mapping
             # This makes Python think 'csm' is a real module that points to our implementation
-            csm_impl_path = Path(__file__).parent / "Sesame-CSM-1b-Folk"
+            csm_impl_path = Path(__file__).parent / "Sesame-CSM-1b-Fork"
             if not csm_impl_path.exists():
                 self.logger.error(f"CSM implementation not found at {csm_impl_path}")
                 return False
