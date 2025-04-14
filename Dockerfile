@@ -11,10 +11,10 @@ ENV TTS_PORT=9000
 # Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies (git is needed for silentcipher)
+# Install system dependencies (git is needed for silentcipher, ffmpeg for pydub)
 # Clean up apt cache afterwards to keep image size down
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git && \
+    apt-get install -y --no-install-recommends git ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container
