@@ -34,6 +34,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Respects the .dockerignore file
 COPY . .
 
+# Clone the nstut-csm-fork repository since it's ignored in .dockerignore
+RUN git clone --depth 1 https://github.com/UpperMoon0/nstut-csm-fork.git /app/nstut-csm-fork
+
 # Copy the entrypoint script and make it executable
 COPY entrypoint.sh .
 RUN chmod +x /app/entrypoint.sh
