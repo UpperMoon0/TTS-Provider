@@ -4,13 +4,15 @@ class BaseTTSModel(ABC):
     """Base class for all TTS models"""
     
     @abstractmethod
-    async def generate_speech(self, text: str, speaker: int = 0, **kwargs) -> bytes:
+    async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
         """
         Generate speech from text
         
         Args:
             text: Text to convert to speech
             speaker: Speaker ID
+            lang: Language code (e.g., "en-US", "ja-JP")
+            # max_audio_length_ms: Removed
             **kwargs: Additional model-specific parameters
             
         Returns:
@@ -68,4 +70,4 @@ class BaseTTSModel(ABC):
         Returns:
             Dict mapping speaker IDs to descriptions
         """
-        pass 
+        pass

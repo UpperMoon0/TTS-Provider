@@ -222,8 +222,9 @@ class TTSServer:
             speaker = request.get("speaker", 0)
             sample_rate = request.get("sample_rate", 24000)
             response_mode = request.get("response_mode", "stream")
-            max_audio_length_ms = request.get("max_audio_length_ms", 30000)  # Default to 30 seconds if not specified
+            # max_audio_length_ms = request.get("max_audio_length_ms", 30000) # Removed parameter
             model_type = request.get("model", self.generator.model_name)  # Optional model selection
+            lang = request.get("lang", "en-US") # Add language parameter, default to en-US
             
             # Map the speaker ID to the appropriate model-specific ID
             mapped_speaker = self.map_speaker_id(speaker, model_type)
@@ -242,9 +243,10 @@ class TTSServer:
             self.logger.info(f" - Text length: {text_length} chars")
             self.logger.info(f" - Text preview: '{text_preview}'")
             self.logger.info(f" - Original speaker: {speaker}, Mapped speaker: {mapped_speaker}")
+            self.logger.info(f" - Language: {lang}")
             self.logger.info(f" - Sample rate: {sample_rate}")
             self.logger.info(f" - Response mode: {response_mode}")
-            self.logger.info(f" - Max audio length: {max_audio_length_ms} ms")
+            # self.logger.info(f" - Max audio length: {max_audio_length_ms} ms") # Removed log
             if model_type:
                 self.logger.info(f" - Requested model: {model_type}")
             
@@ -255,10 +257,11 @@ class TTSServer:
                 start_time = asyncio.get_event_loop().time()
                 
                 audio_bytes = await self.generator.generate_speech(
-                    text=text, 
+                    text=text,
                     speaker=mapped_speaker,  # Use the mapped speaker ID
+                    lang=lang,               # Pass the language
                     sample_rate=sample_rate,
-                    max_audio_length_ms=max_audio_length_ms,
+                    # max_audio_length_ms=max_audio_length_ms, # Removed parameter
                     **extra_params
                 )
                 

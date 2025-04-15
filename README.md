@@ -124,10 +124,35 @@ Basic request format:
 ```json
 {
   "text": "Text to convert to speech",
-  "speaker": 0,  
+  "speaker": 0,
   "sample_rate": 24000,
   "response_mode": "stream",
-  "model": "edge"  // Optional, specify model type (edge or sesame)
+  "model": "edge",  // Optional, specify model type (edge or sesame)
+  "lang": "en-US"   // Optional, specify language (default: "en-US")
+  // "max_audio_length_ms" parameter removed
+}
+```
+
+#### Language Support (`lang` parameter)
+
+You can specify the language for the TTS generation using the `lang` parameter.
+
+- **Default**: `en-US` (if not specified)
+- **Supported Languages**:
+  - `en-US`: Supported by both `edge` and `sesame` models.
+  - `ja-JP`: Supported only by the `edge` model.
+    - Speaker 0: `ja-JP-KeitaNeural`
+    - Speaker 1: `ja-JP-NanamiNeural`
+    - *Note*: Speaker IDs 2 and 3 are not currently mapped for `ja-JP`. Requesting them will fall back to speaker 0 (`KeitaNeural`).
+
+**Example (Japanese):**
+
+```json
+{
+  "text": "こんにちは、これはテストです。",
+  "speaker": 1,          // Use NanamiNeural voice
+  "model": "edge",
+  "lang": "ja-JP"
 }
 ```
 

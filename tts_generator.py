@@ -78,16 +78,17 @@ class TTSGenerator:
         # For other models, check if they're loaded
         return self.model is not None and (self.ready or self.model.is_ready())
     
-    async def generate_speech(self, text: str, speaker: int = 0, sample_rate: Optional[int] = None, 
-                            max_audio_length_ms: Optional[int] = None, **kwargs) -> bytes:
+    async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", 
+                            sample_rate: Optional[int] = None, **kwargs) -> bytes:
         """
         Generate speech asynchronously
         
         Args:
             text: Text to convert to speech
             speaker: Speaker ID
+            lang: Language code (e.g., "en-US", "ja-JP")
             sample_rate: Sample rate of the generated audio
-            max_audio_length_ms: Maximum audio length in milliseconds
+            # max_audio_length_ms: Maximum audio length in milliseconds (Removed)
             **kwargs: Additional model-specific parameters
             
         Returns:
@@ -116,17 +117,19 @@ class TTSGenerator:
         self.logger.info(f" - Model: {self.model.model_name}")
         self.logger.info(f" - Text length: {text_length} chars")
         self.logger.info(f" - Speaker: {speaker}")
+        self.logger.info(f" - Language: {lang}")
         
         # Use provided parameters or defaults
-        max_audio_length = max_audio_length_ms or self.max_audio_length_ms
+        # max_audio_length = max_audio_length_ms or self.max_audio_length_ms # Removed
         params = {
-            "max_audio_length_ms": max_audio_length,
+            # "max_audio_length_ms": max_audio_length, # Removed
             **kwargs
         }
         
         # Generate speech using the model
         try:
-            audio_bytes = await self.model.generate_speech(text, speaker, **params)
+            # Pass lang parameter to the model's generate_speech method
+            audio_bytes = await self.model.generate_speech(text, speaker, lang=lang, **params)
             
             # Success
             wav_size_kb = len(audio_bytes) / 1024

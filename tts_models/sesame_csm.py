@@ -57,10 +57,14 @@ class SesameCSMModel(BaseTTSModel):
             1: "Female voice"
         }
     
-    async def generate_speech(self, text: str, speaker: int = 0, **kwargs) -> bytes:
+    async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
         """Generate speech from text"""
-        max_audio_length_ms = kwargs.get("max_audio_length_ms", self.max_audio_length_ms)
+        # max_audio_length_ms = kwargs.get("max_audio_length_ms", self.max_audio_length_ms) # Removed parameter
         
+        # Check language support
+        if lang != "en-US":
+            raise ValueError(f"Sesame CSM model only supports 'en-US' language, but received '{lang}'")
+            
         if not text.strip():
             raise ValueError("Text cannot be empty")
         
@@ -77,14 +81,9 @@ class SesameCSMModel(BaseTTSModel):
             if self.csm_generator is None:
                 raise RuntimeError("CSM generator model is not loaded")
                 
-            # Get max audio length for the model - use the provided value or fall back to default
-            # Force a higher value to ensure we get complete audio
-            if max_audio_length_ms is None or max_audio_length_ms < 180000:
-                max_audio_length = 180000  # Maximum 3 minutes for stability
-                self.logger.info(f"Using FORCED max audio length: {max_audio_length} ms (overriding provided value: {max_audio_length_ms})")
-            else:
-                max_audio_length = max_audio_length_ms
-                self.logger.info(f"Using provided max audio length: {max_audio_length} ms")
+            # Use a fixed large value for max_audio_length_ms for stability, as the parameter is removed
+            max_audio_length = 180000  # Maximum 3 minutes for stability
+            self.logger.info(f"Using fixed internal max audio length for CSM: {max_audio_length} ms")
             
             # Debug log about actual generation
             self.logger.info(f"Calling CSM model with text: '{text[:100]}...' ({text_length} chars)")
@@ -132,4 +131,4 @@ class SesameCSMModel(BaseTTSModel):
             self.logger.error(traceback.format_exc())
             
             # Propagate the error instead of falling back to synthetic audio
-            raise RuntimeError(f"Failed to generate speech: {str(e)}") 
+            raise RuntimeError(f"Failed to generate speech: {str(e)}")

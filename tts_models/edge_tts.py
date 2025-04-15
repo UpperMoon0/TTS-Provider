@@ -10,13 +10,23 @@ from pydub import AudioSegment
 class EdgeTTSModel(BaseTTSModel):
     """Microsoft Edge TTS model implementation"""
     
-    # List of Edge TTS voices with mapping to our numeric speaker IDs
-    VOICE_MAPPING = {
-        0: "en-US-ChristopherNeural",         
-        1: "en-US-JennyNeural",     
-        2: "en-US-DavisNeural",       
-        3: "en-US-AriaNeural",      
+    # Language-specific voice mappings
+    VOICE_MAPPINGS = {
+        "en-US": {
+            0: "en-US-ChristopherNeural",
+            1: "en-US-JennyNeural",
+            2: "en-US-DavisNeural",
+            3: "en-US-AriaNeural", # Note: This was Aria, keeping it for consistency unless specified otherwise
+            # Add more en-US voices if needed
+        },
+        "ja-JP": {
+            0: "ja-JP-KeitaNeural",
+            1: "ja-JP-NanamiNeural",
+            # Speaker IDs 2 and 3 are not defined for ja-JP based on requirements
+        }
     }
+    
+    DEFAULT_VOICE = "en-US-ChristopherNeural" # Default fallback if language/speaker combo fails
     
     def __init__(self):
         """Initialize the Edge TTS model"""
@@ -69,8 +79,10 @@ class EdgeTTSModel(BaseTTSModel):
             0: "US Male (Guy)",
             1: "US Female (Jenny)",
             2: "US Male (Davis)",
-            3: "UK Female (Sonia)",
+            3: "US Female (Aria)", # Updated description to match voice
         }
+        # Note: supported_speakers currently only reflects en-US. 
+        # A more dynamic approach might be needed if supporting many languages/speakers.
     
     def _sanitize_text(self, text: str) -> str:
         """
@@ -102,9 +114,30 @@ class EdgeTTSModel(BaseTTSModel):
         """Verify that a voice exists in the Edge TTS service"""
         voices = await self._get_available_voices()
         return any(v["ShortName"] == voice_name for v in voices)
-    
-    async def generate_speech(self, text: str, speaker: int = 0, **kwargs) -> bytes:
+        
+    def _get_voice_for_speaker(self, lang: str, speaker: int) -> str:
+        """Get the voice name for a given language and speaker ID."""
+        lang_voices = self.VOICE_MAPPINGS.get(lang)
+        if not lang_voices:
+            self.logger.warning(f"Language '{lang}' not configured. Falling back to default voice '{self.DEFAULT_VOICE}'.")
+            return self.DEFAULT_VOICE
+            
+        voice = lang_voices.get(speaker)
+        if not voice:
+            # Fallback to speaker 0 for the requested language if the specific speaker ID doesn't exist
+            fallback_voice = lang_voices.get(0)
+            if fallback_voice:
+                self.logger.warning(f"Speaker ID {speaker} not found for language '{lang}'. Falling back to speaker 0 ('{fallback_voice}').")
+                return fallback_voice
+            else:
+                # If speaker 0 also doesn't exist for the language, use the absolute default
+                self.logger.warning(f"Speaker ID {speaker} and fallback speaker 0 not found for language '{lang}'. Falling back to default voice '{self.DEFAULT_VOICE}'.")
+                return self.DEFAULT_VOICE
+        return voice
+
+    async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
         """Generate speech from text using Edge TTS"""
+        # max_audio_length_ms parameter removed from signature
         if not text.strip():
             raise ValueError("Text cannot be empty")
         
@@ -115,8 +148,8 @@ class EdgeTTSModel(BaseTTSModel):
         if text != original_text:
             self.logger.info(f"Text was sanitized for better compatibility")
             
-        # Get voice name from speaker ID, fallback to default if not found
-        voice = self.VOICE_MAPPING.get(speaker, self.VOICE_MAPPING[0])
+        # Get the appropriate voice based on language and speaker ID
+        voice = self._get_voice_for_speaker(lang, speaker)
         
         # Check if any rate, volume, or pitch parameters were passed
         if any(param in kwargs for param in ["rate", "volume", "pitch"]):
@@ -126,15 +159,19 @@ class EdgeTTSModel(BaseTTSModel):
         self.logger.info(f"Generating speech using Edge TTS:")
         self.logger.info(f" - Text length: {len(text)} chars")
         self.logger.info(f" - Text preview: '{text[:100]}...' (truncated)" if len(text) > 100 else f" - Text: '{text}'")
-        self.logger.info(f" - Voice: {voice} (speaker ID: {speaker})")
+        self.logger.info(f" - Language: {lang}")
+        self.logger.info(f" - Selected Voice: {voice} (Original Speaker ID: {speaker})")
         self.logger.info(f" - Using default voice parameters only (SSML modifications not allowed)")
         
-        # Verify the voice exists
+        # Verify the selected voice exists
         if not await self._verify_voice_exists(voice):
-            self.logger.warning(f"Voice {voice} doesn't exist in Edge TTS. Using default voice instead.")
-            voice = "en-US-GuyNeural"  # Default fallback voice
+            self.logger.warning(f"Selected voice '{voice}' not found in Edge TTS list. Falling back to absolute default '{self.DEFAULT_VOICE}'.")
+            voice = self.DEFAULT_VOICE
+            # Re-verify the absolute default just in case
+            if not await self._verify_voice_exists(voice):
+                 raise RuntimeError(f"Default fallback voice '{self.DEFAULT_VOICE}' also not found. Cannot proceed.")
             
-        # List of voices to try (primary + fallbacks)
+        # List of voices to try (selected voice)
         voices_to_try = [voice]
         
         errors = []
