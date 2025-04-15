@@ -22,13 +22,9 @@ To use the Sesame CSM-1B model, you'll need to:
    huggingface-cli login
    ```
 
-2. Clone the CSM GitHub repository (might require some modifications to run without errors):
+2. Clone the forked CSM GitHub repository, (forked to patch an error encountered when running with TTS-Provider).
    ```bash
-   git clone https://github.com/SesameAILabs/csm.git
-   cd csm
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
+   git clone https://github.com/UpperMoon0/nstut-csm-fork.git
    ```
 
 3. Download the model files:
