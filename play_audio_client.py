@@ -35,7 +35,7 @@ async def play_audio_from_server(host: str, port: int, text: str, model: str = N
                 "response_mode": "stream" # We want binary data directly
             }
             if model:
-                request_payload["model_type"] = model # Use model_type as per tts_client.py and server
+                request_payload["model"] = model
             
             logger.info(f"Sending TTS request: {json.dumps(request_payload)}")
             await websocket.send(json.dumps(request_payload))

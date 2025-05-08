@@ -5,7 +5,7 @@ import re
 import edge_tts
 from typing import Dict, List, Tuple
 from .base_model import BaseTTSModel
-from pydub import AudioSegment
+from pydub import AudioSegment # Keep pydub import
 
 class EdgeTTSModel(BaseTTSModel):
     """Microsoft Edge TTS model implementation"""
@@ -209,32 +209,41 @@ class EdgeTTSModel(BaseTTSModel):
                 # Convert to WAV format using pydub
                 self.logger.info(f"Converting Edge TTS audio data to WAV format (original size: {len(audio_data)/1024:.1f} KB)")
                 
-                try:
-                    # Load MP3 data into AudioSegment
-                    audio_segment = AudioSegment.from_file(io.BytesIO(audio_data), format="mp3")
-                    
-                    # Export as WAV to a bytes buffer
-                    wav_buffer = io.BytesIO()
-                    audio_segment.export(wav_buffer, format="wav")
-                    wav_buffer.seek(0)
-                    wav_data = wav_buffer.read()
-                    
-                    # Calculate audio length in seconds
-                    audio_length_seconds = len(audio_segment) / 1000  # AudioSegment length is in milliseconds
-                    
-                    self.logger.info(f"Successfully converted to WAV format: {len(wav_data)/1024:.1f} KB")
-                    self.logger.info(f"Audio length: {audio_length_seconds:.2f} seconds ({len(wav_data)} bytes)")
-                    return wav_data
-                    
-                except Exception as conv_error:
-                    self.logger.error(f"Error converting MP3 to WAV: {str(conv_error)}")
-                    self.logger.warning("Returning original audio data without conversion")
-                    
-                    # Calculate approximate audio length in seconds (rough estimate)
-                    audio_length_seconds = len(audio_data) / 48000
-                    self.logger.info(f"Generated {len(audio_data)/1024:.1f} KB of audio with Edge TTS using voice {current_voice}")
-                    self.logger.info(f"Audio length: {audio_length_seconds:.2f} seconds ({len(audio_data)} bytes)")
-                    return audio_data
+                # Define the blocking pydub conversion part
+                def _blocking_convert_to_wav(mp3_data):
+                    self.logger.info(f"Thread: Converting Edge TTS audio data to WAV format (original size: {len(mp3_data)/1024:.1f} KB)")
+                    try:
+                        # Load MP3 data into AudioSegment
+                        audio_segment = AudioSegment.from_file(io.BytesIO(mp3_data), format="mp3")
+                        
+                        # Export as WAV to a bytes buffer
+                        wav_buffer = io.BytesIO()
+                        audio_segment.export(wav_buffer, format="wav")
+                        wav_buffer.seek(0)
+                        wav_data = wav_buffer.read()
+                        
+                        # Calculate audio length in seconds
+                        audio_length_seconds = len(audio_segment) / 1000  # AudioSegment length is in milliseconds
+                        
+                        self.logger.info(f"Thread: Successfully converted to WAV format: {len(wav_data)/1024:.1f} KB")
+                        self.logger.info(f"Thread: Audio length: {audio_length_seconds:.2f} seconds ({len(wav_data)} bytes)")
+                        return wav_data, audio_length_seconds
+                        
+                    except Exception as conv_error:
+                        self.logger.error(f"Thread: Error converting MP3 to WAV: {str(conv_error)}")
+                        self.logger.warning("Thread: Returning original MP3 data without conversion due to error.")
+                        return mp3_data, len(mp3_data) / 48000 # Approximate length for MP3
+                
+                # Offload the conversion to a separate thread
+                wav_data, audio_length_seconds = await asyncio.to_thread(_blocking_convert_to_wav, audio_data)
+
+                if wav_data == audio_data: # This means conversion failed and original was returned
+                    self.logger.warning("Conversion to WAV failed, original MP3 data returned.")
+                else:
+                    self.logger.info(f"Successfully converted to WAV format (processed in thread)")
+
+                self.logger.info(f"Audio length: {audio_length_seconds:.2f} seconds ({len(wav_data)} bytes)")
+                return wav_data
                 
             except Exception as e:
                 self.logger.error(f"Error generating speech with Edge TTS voice {current_voice}: {str(e)}")

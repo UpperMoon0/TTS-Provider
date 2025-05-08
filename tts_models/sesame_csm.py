@@ -1,6 +1,7 @@
 import io
 import logging
 import torchaudio
+import asyncio # Add asyncio import
 from .base_model import BaseTTSModel
 from model_loader import ModelLoader
 
@@ -17,11 +18,18 @@ class SesameCSMModel(BaseTTSModel):
         self.model_loader = ModelLoader(logger=self.logger)
     
     async def load(self) -> bool:
-        """Load the CSM-1B TTS model"""
-        self.logger.info("Loading CSM-1B TTS model...")
-        
-        # Use the model loader to load the CSM model
-        self.csm_generator = self.model_loader.load_csm_model()
+        """Load the CSM-1B TTS model, offloading blocking parts to a thread."""
+        self.logger.info("Preparing to load CSM-1B TTS model...")
+
+        # Define the blocking part of the load operation
+        def _blocking_load_csm():
+            self.logger.info("Thread: Starting CSM-1B model loading process...")
+            csm_gen = self.model_loader.load_csm_model() # This can block (download, disk I/O, CPU)
+            self.logger.info("Thread: CSM-1B model loading process finished.")
+            return csm_gen
+
+        # Offload the blocking load operation
+        self.csm_generator = await asyncio.to_thread(_blocking_load_csm)
         
         if self.csm_generator is not None:
             # Update sample rate from the loaded model
@@ -58,7 +66,7 @@ class SesameCSMModel(BaseTTSModel):
         }
     
     async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
-        """Generate speech from text"""
+        """Generate speech from text, offloading CPU-bound work to a separate thread."""
         # max_audio_length_ms = kwargs.get("max_audio_length_ms", self.max_audio_length_ms) # Removed parameter
         
         # Check language support
@@ -69,60 +77,65 @@ class SesameCSMModel(BaseTTSModel):
             raise ValueError("Text cannot be empty")
         
         if not self.ready:
-            if not await self.load():
+            if not await self.load(): # load() is already async and handles its own threading if necessary
                 raise RuntimeError("Model failed to load. Check logs for details.")
         
         text_length = len(text)
-        self.logger.info(f"Generating speech for speaker {speaker}: '{text[:100]}...' ({text_length} chars)")
-        
-        # Generate audio using CSM-1B
+        self.logger.info(f"Preparing to generate speech for speaker {speaker}: '{text[:100]}...' ({text_length} chars)")
+
         try:
             # Verify the CSM generator exists
             if self.csm_generator is None:
                 raise RuntimeError("CSM generator model is not loaded")
+
+            # This function will contain the blocking (CPU-bound) code
+            def _blocking_generate_and_encode():
+                # Use a fixed large value for max_audio_length_ms for stability, as the parameter is removed
+                max_audio_length = 180000  # Maximum 3 minutes for stability
+                self.logger.info(f"Thread: Using fixed internal max audio length for CSM: {max_audio_length} ms")
                 
-            # Use a fixed large value for max_audio_length_ms for stability, as the parameter is removed
-            max_audio_length = 180000  # Maximum 3 minutes for stability
-            self.logger.info(f"Using fixed internal max audio length for CSM: {max_audio_length} ms")
-            
-            # Debug log about actual generation
-            self.logger.info(f"Calling CSM model with text: '{text[:100]}...' ({text_length} chars)")
-            self.logger.info(f"Estimated audio length: ~{(text_length / 20) * 1000:.0f} ms ({text_length / 20:.1f} seconds) at average speech rate")
-            
-            # Generate audio using CSM-1B
-            audio_tensor = self.csm_generator.generate(
-                text=text,
-                speaker=speaker,
-                context=[],  # No context for simple generation
-                max_audio_length_ms=max_audio_length,
-                temperature=0.8,  # Adjust as needed
-                topk=50
-            )
-            
-            # Check if we got a valid tensor back
-            if audio_tensor is None:
-                raise RuntimeError("CSM model returned None instead of audio tensor")
+                # Debug log about actual generation
+                self.logger.info(f"Thread: Calling CSM model with text: '{text[:100]}...' ({text_length} chars)")
+                self.logger.info(f"Thread: Estimated audio length: ~{(text_length / 20) * 1000:.0f} ms ({text_length / 20:.1f} seconds) at average speech rate")
                 
-            self.logger.info(f"Generated audio tensor with shape: {audio_tensor.shape}")
-            if hasattr(audio_tensor, 'shape') and len(audio_tensor.shape) > 0:
-                duration_seconds = audio_tensor.shape[-1] / self.sample_rate
-                self.logger.info(f"Estimated audio duration: {duration_seconds:.2f} seconds")
-                if duration_seconds < (text_length / 20) * 0.8:  # If much shorter than expected
-                    self.logger.warning(f"WARNING: Generated audio seems too short ({duration_seconds:.2f}s) for the input text ({text_length} chars)")
-            
-            # Convert to WAV format using torchaudio
-            wav_io = io.BytesIO()
-            
-            # Ensure proper format - tensor needs to be 2D [channels, samples]
-            audio_tensor_2d = audio_tensor.unsqueeze(0).cpu()
-            
-            torchaudio.save(wav_io, audio_tensor_2d, self.sample_rate, format='wav')
-            wav_io.seek(0)
-            wav_bytes = wav_io.read()
+                # Generate audio using CSM-1B
+                audio_tensor = self.csm_generator.generate(
+                    text=text,
+                    speaker=speaker,
+                    context=[],  # No context for simple generation
+                    max_audio_length_ms=max_audio_length,
+                    temperature=0.8,  # Adjust as needed
+                    topk=50
+                )
+                
+                # Check if we got a valid tensor back
+                if audio_tensor is None:
+                    raise RuntimeError("CSM model returned None instead of audio tensor")
+                    
+                self.logger.info(f"Thread: Generated audio tensor with shape: {audio_tensor.shape}")
+                if hasattr(audio_tensor, 'shape') and len(audio_tensor.shape) > 0:
+                    duration_seconds = audio_tensor.shape[-1] / self.sample_rate
+                    self.logger.info(f"Thread: Estimated audio duration: {duration_seconds:.2f} seconds")
+                    if duration_seconds < (text_length / 20) * 0.8:  # If much shorter than expected
+                        self.logger.warning(f"Thread: WARNING: Generated audio seems too short ({duration_seconds:.2f}s) for the input text ({text_length} chars)")
+                
+                # Convert to WAV format using torchaudio
+                wav_io = io.BytesIO()
+                
+                # Ensure proper format - tensor needs to be 2D [channels, samples]
+                audio_tensor_2d = audio_tensor.unsqueeze(0).cpu()
+                
+                torchaudio.save(wav_io, audio_tensor_2d, self.sample_rate, format='wav')
+                wav_io.seek(0)
+                return wav_io.read()
+
+            # Offload the blocking operations to a separate thread
+            self.logger.info("Offloading CSM generation and encoding to a separate thread.")
+            wav_bytes = await asyncio.to_thread(_blocking_generate_and_encode)
             
             # Success
             wav_size_kb = len(wav_bytes) / 1024
-            self.logger.info(f"Converted audio to WAV format, size: {wav_size_kb:.1f} KB ({len(wav_bytes)} bytes)")
+            self.logger.info(f"Converted audio to WAV format, size: {wav_size_kb:.1f} KB ({len(wav_bytes)} bytes) (processed in thread)")
             return wav_bytes
             
         except Exception as e:
