@@ -34,7 +34,6 @@ def main():
     parser.add_argument("--host", default=os.environ.get("TTS_HOST", "0.0.0.0"), help="Host to bind the server to")
     parser.add_argument("--port", type=int, default=int(os.environ.get("TTS_PORT", 9000)), help="Port to bind the server to")
     parser.add_argument("--model", default=os.environ.get("TTS_MODEL", "edge"), help="Default TTS model to use (e.g., 'sesame', 'edge')")
-    parser.add_argument("--preload", type=bool, default=False, help="Whether to preload the model at startup (default: False)")
     args = parser.parse_args()
     
     # Log the configuration
@@ -42,7 +41,6 @@ def main():
     logger.info(f" - Host: {args.host}")
     logger.info(f" - Port: {args.port}")
     logger.info(f" - Default model: {args.model}")
-    logger.info(f" - Preload model: {args.preload}")
     
     # Set the model in the environment for the server to use
     if args.model:
@@ -51,13 +49,7 @@ def main():
     # Create and run the server
     server = TTSServer(host=args.host, port=args.port)
     
-    # Preload the model if requested (only beneficial for Edge TTS which is lightweight)
-    if args.preload:
-        logger.info("Preloading the model...")
-        import asyncio
-        asyncio.run(server.preload_model())
-    else:
-        logger.info("Lazy loading enabled - models will be loaded on first request")
+    logger.info("Lazy loading enabled - models will be loaded on first request")
     
     # Run the server
     server.run()
