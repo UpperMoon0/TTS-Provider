@@ -10,7 +10,6 @@ import logging
 import os
 from dotenv import load_dotenv
 
-from model_loader import ModelLoader # Import ModelLoader
 from tts_server import TTSServer
 
 def setup_logging():
