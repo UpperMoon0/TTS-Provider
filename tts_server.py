@@ -27,9 +27,10 @@ class TTSServer:
         self.port = port
         self.logger = logging.getLogger("TTSServer")
         
-        # Get the default model from environment or use the default
-        default_model = os.environ.get("TTS_MODEL", "sesame")
-        self.logger.info(f"Using default TTS model: {default_model}")
+        # Default model is hardcoded to "edge" if not specified in request
+        # TTS_MODEL environment variable is no longer used for default model selection
+        self.initial_default_model = "edge" 
+        self.logger.info(f"Initial default TTS model if not specified by client: {self.initial_default_model}")
         self.generator = None
         # Use absolute path to ensure files are saved in the TTS-Provider directory
         self.files_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "generated_files"
@@ -69,8 +70,9 @@ class TTSServer:
         
         # Initialize the generator here to avoid loading the model too early
         if self.generator is None:
-            default_model = os.environ.get("TTS_MODEL", "sesame")
-            self.generator = TTSGenerator(model_name=default_model)
+            # TTSGenerator is initialized with the hardcoded default model "edge".
+            # It will be used if a client request doesn't specify a model.
+            self.generator = TTSGenerator(model_name=self.initial_default_model)
             
         # Start the queue processor task if the model is already loaded
         if self.model_loaded and self.queue_processor_task is None:
@@ -89,16 +91,18 @@ class TTSServer:
             self.logger.info(f"Server started on {self.host}:{self.port}")
             await asyncio.Future()  # Run forever
     
-    async def preload_model(self):
-        """Preload the TTS model to avoid delays on first request"""
+    async def preload_model(self, websocket=None): # Added websocket parameter
+        """Preload the TTS model to avoid delays on first request.
+        Can optionally ping the provided websocket during loading."""
         if self.model_loaded or self.model_loading:
             self.logger.info("Model already loaded or loading in progress")
             return
         
         self.model_loading = True
         try:
-            # Load the model
-            await asyncio.to_thread(self.generator.load_model)
+            # Load the model, passing the websocket object
+            self.logger.info(f"Calling self.generator.load_model in a thread, passing websocket: {websocket is not None}")
+            await asyncio.to_thread(self.generator.load_model, websocket=websocket) # Pass websocket
             self.model_loaded = self.generator.is_ready()
             
             if self.model_loaded:
@@ -178,8 +182,9 @@ class TTSServer:
                 if not self.generator.is_ready():
                     # If model is not loading yet, start loading it
                     if not self.model_loading and not self.model_loaded:
-                        # Start loading the model in the background
-                        asyncio.create_task(self.preload_model())
+                        # Start loading the model in the background, passing the client's websocket
+                        self.logger.info(f"Model not ready, creating preload_model task for websocket: {websocket.remote_address}")
+                        asyncio.create_task(self.preload_model(websocket=websocket)) # Pass websocket here
                     
                     # Inform client that their request is queued
                     await websocket.send(json.dumps({
@@ -222,8 +227,9 @@ class TTSServer:
             speaker = request.get("speaker", 0)
             sample_rate = request.get("sample_rate", 24000)
             response_mode = request.get("response_mode", "stream")
-            max_audio_length_ms = request.get("max_audio_length_ms", 30000)  # Default to 30 seconds if not specified
+            # max_audio_length_ms = request.get("max_audio_length_ms", 30000) # Removed parameter
             model_type = request.get("model", self.generator.model_name)  # Optional model selection
+            lang = request.get("lang", "en-US") # Add language parameter, default to en-US
             
             # Map the speaker ID to the appropriate model-specific ID
             mapped_speaker = self.map_speaker_id(speaker, model_type)
@@ -242,9 +248,10 @@ class TTSServer:
             self.logger.info(f" - Text length: {text_length} chars")
             self.logger.info(f" - Text preview: '{text_preview}'")
             self.logger.info(f" - Original speaker: {speaker}, Mapped speaker: {mapped_speaker}")
+            self.logger.info(f" - Language: {lang}")
             self.logger.info(f" - Sample rate: {sample_rate}")
             self.logger.info(f" - Response mode: {response_mode}")
-            self.logger.info(f" - Max audio length: {max_audio_length_ms} ms")
+            # self.logger.info(f" - Max audio length: {max_audio_length_ms} ms") # Removed log
             if model_type:
                 self.logger.info(f" - Requested model: {model_type}")
             
@@ -255,10 +262,12 @@ class TTSServer:
                 start_time = asyncio.get_event_loop().time()
                 
                 audio_bytes = await self.generator.generate_speech(
-                    text=text, 
+                    text=text,
                     speaker=mapped_speaker,  # Use the mapped speaker ID
+                    lang=lang,               # Pass the language
                     sample_rate=sample_rate,
-                    max_audio_length_ms=max_audio_length_ms,
+                    websocket=websocket,     # Pass websocket here
+                    # max_audio_length_ms=max_audio_length_ms, # Removed parameter
                     **extra_params
                 )
                 

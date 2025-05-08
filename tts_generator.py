@@ -78,16 +78,17 @@ class TTSGenerator:
         # For other models, check if they're loaded
         return self.model is not None and (self.ready or self.model.is_ready())
     
-    async def generate_speech(self, text: str, speaker: int = 0, sample_rate: Optional[int] = None, 
-                            max_audio_length_ms: Optional[int] = None, **kwargs) -> bytes:
+    async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", 
+                            sample_rate: Optional[int] = None, websocket=None, **kwargs) -> bytes: # Added websocket
         """
         Generate speech asynchronously
         
         Args:
             text: Text to convert to speech
             speaker: Speaker ID
+            lang: Language code (e.g., "en-US", "ja-JP")
             sample_rate: Sample rate of the generated audio
-            max_audio_length_ms: Maximum audio length in milliseconds
+            # max_audio_length_ms: Maximum audio length in milliseconds (Removed)
             **kwargs: Additional model-specific parameters
             
         Returns:
@@ -108,7 +109,8 @@ class TTSGenerator:
         # Check if model is ready
         if not self.is_ready():
             self.logger.info("Model not ready, loading...")
-            if not await self._async_load_model():
+            # Pass websocket to _async_load_model
+            if not await self._async_load_model(websocket=websocket): # Pass websocket here
                 raise RuntimeError("Model failed to load. Check logs for details.")
         
         text_length = len(text)
@@ -116,17 +118,19 @@ class TTSGenerator:
         self.logger.info(f" - Model: {self.model.model_name}")
         self.logger.info(f" - Text length: {text_length} chars")
         self.logger.info(f" - Speaker: {speaker}")
+        self.logger.info(f" - Language: {lang}")
         
         # Use provided parameters or defaults
-        max_audio_length = max_audio_length_ms or self.max_audio_length_ms
+        # max_audio_length = max_audio_length_ms or self.max_audio_length_ms # Removed
         params = {
-            "max_audio_length_ms": max_audio_length,
+            # "max_audio_length_ms": max_audio_length, # Removed
             **kwargs
         }
         
         # Generate speech using the model
         try:
-            audio_bytes = await self.model.generate_speech(text, speaker, **params)
+            # Pass lang and websocket parameters to the model's generate_speech method
+            audio_bytes = await self.model.generate_speech(text, speaker, lang=lang, websocket=websocket, **params) # Pass websocket here
             
             # Success
             wav_size_kb = len(audio_bytes) / 1024
@@ -141,13 +145,14 @@ class TTSGenerator:
             # Propagate the error
             raise RuntimeError(f"Failed to generate speech: {str(e)}")
     
-    async def _async_load_model(self) -> bool:
+    async def _async_load_model(self, websocket=None) -> bool: # Added websocket parameter
         """Load the model asynchronously"""
         # Ensure the model is initialized
         if self.model is None:
             self._initialize_model(self.model_name)
             
-        result = await self.model.load()
+        # Pass websocket to the model's load method
+        result = await self.model.load(websocket=websocket)
         self.ready = result
         return result
     

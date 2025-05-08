@@ -1,12 +1,10 @@
 import os
-import sys
 import json
 import time
 import asyncio
 import pytest
 import tempfile
 import websockets
-from pathlib import Path
 
 # Test constants
 TEST_TEXT = "This is a test of the text-to-speech system from the client integration test."
