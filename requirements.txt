@@ -1,5 +1,5 @@
-torch>=2.0.0
-torchaudio>=2.0.0
+# torch==2.4.0
+# torchaudio>=2.0.0
 tokenizers==0.21.0
 transformers>=4.30.0
 huggingface_hub>=0.17.0
