@@ -22,17 +22,12 @@ To use the Sesame CSM-1B model, you'll need to:
    huggingface-cli login
    ```
 
-2. Clone the forked CSM GitHub repository, (forked to patch an error encountered when running with TTS-Provider).
-   ```bash
-   git clone https://github.com/UpperMoon0/nstut-csm-fork.git
-   ```
-
-3. Download the model files:
+2. Download the model files:
    The model will be automatically downloaded from Hugging Face when first used, but you need to have accepted the terms on the [Sesame CSM-1B model page](https://huggingface.co/sesame/csm-1b).
 
    Note: The model requires access to both `sesame/csm-1b` and `meta-llama/Llama-3.2-1B` on Hugging Face.
 
-4. Make sure the model files are placed in the correct location (typically under the `models/csm-1b/` directory).
+3. Make sure the model files are placed in the correct location (typically under the `models/csm-1b/` directory).
 
 ## Running the Server
 
