@@ -27,9 +27,10 @@ class TTSServer:
         self.port = port
         self.logger = logging.getLogger("TTSServer")
         
-        # Get the default model from environment or use the default
-        default_model = os.environ.get("TTS_MODEL", "sesame")
-        self.logger.info(f"Using default TTS model: {default_model}")
+        # Default model is hardcoded to "edge" if not specified in request
+        # TTS_MODEL environment variable is no longer used for default model selection
+        self.initial_default_model = "edge" 
+        self.logger.info(f"Initial default TTS model if not specified by client: {self.initial_default_model}")
         self.generator = None
         # Use absolute path to ensure files are saved in the TTS-Provider directory
         self.files_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "generated_files"
@@ -69,8 +70,9 @@ class TTSServer:
         
         # Initialize the generator here to avoid loading the model too early
         if self.generator is None:
-            default_model = os.environ.get("TTS_MODEL", "sesame")
-            self.generator = TTSGenerator(model_name=default_model)
+            # TTSGenerator is initialized with the hardcoded default model "edge".
+            # It will be used if a client request doesn't specify a model.
+            self.generator = TTSGenerator(model_name=self.initial_default_model)
             
         # Start the queue processor task if the model is already loaded
         if self.model_loaded and self.queue_processor_task is None:

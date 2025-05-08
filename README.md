@@ -9,6 +9,7 @@ A flexible WebSocket-based Text-to-Speech service that supports multiple TTS bac
 
 1. Clone this repository
 2. Install the required packages:
+
    ```
    pip install -r requirements.txt
    ```
@@ -18,11 +19,13 @@ A flexible WebSocket-based Text-to-Speech service that supports multiple TTS bac
 To use the Sesame CSM-1B model, you'll need to:
 
 1. Login to Hugging Face (you need to accept the model terms):
+
    ```bash
    huggingface-cli login
    ```
 
 2. Clone the forked CSM GitHub repository, (forked to patch an error encountered when running with TTS-Provider).
+
    ```bash
    git clone https://github.com/UpperMoon0/nstut-csm-fork.git
    ```
