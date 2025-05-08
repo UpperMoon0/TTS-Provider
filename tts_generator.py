@@ -79,7 +79,7 @@ class TTSGenerator:
         return self.model is not None and (self.ready or self.model.is_ready())
     
     async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", 
-                            sample_rate: Optional[int] = None, **kwargs) -> bytes:
+                            sample_rate: Optional[int] = None, websocket=None, **kwargs) -> bytes: # Added websocket
         """
         Generate speech asynchronously
         
@@ -109,7 +109,8 @@ class TTSGenerator:
         # Check if model is ready
         if not self.is_ready():
             self.logger.info("Model not ready, loading...")
-            if not await self._async_load_model():
+            # Pass websocket to _async_load_model
+            if not await self._async_load_model(websocket=websocket): # Pass websocket here
                 raise RuntimeError("Model failed to load. Check logs for details.")
         
         text_length = len(text)
@@ -128,8 +129,8 @@ class TTSGenerator:
         
         # Generate speech using the model
         try:
-            # Pass lang parameter to the model's generate_speech method
-            audio_bytes = await self.model.generate_speech(text, speaker, lang=lang, **params)
+            # Pass lang and websocket parameters to the model's generate_speech method
+            audio_bytes = await self.model.generate_speech(text, speaker, lang=lang, websocket=websocket, **params) # Pass websocket here
             
             # Success
             wav_size_kb = len(audio_bytes) / 1024
@@ -144,13 +145,14 @@ class TTSGenerator:
             # Propagate the error
             raise RuntimeError(f"Failed to generate speech: {str(e)}")
     
-    async def _async_load_model(self) -> bool:
+    async def _async_load_model(self, websocket=None) -> bool: # Added websocket parameter
         """Load the model asynchronously"""
         # Ensure the model is initialized
         if self.model is None:
             self._initialize_model(self.model_name)
             
-        result = await self.model.load()
+        # Pass websocket to the model's load method
+        result = await self.model.load(websocket=websocket)
         self.ready = result
         return result
     

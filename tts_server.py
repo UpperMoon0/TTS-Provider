@@ -91,16 +91,18 @@ class TTSServer:
             self.logger.info(f"Server started on {self.host}:{self.port}")
             await asyncio.Future()  # Run forever
     
-    async def preload_model(self):
-        """Preload the TTS model to avoid delays on first request"""
+    async def preload_model(self, websocket=None): # Added websocket parameter
+        """Preload the TTS model to avoid delays on first request.
+        Can optionally ping the provided websocket during loading."""
         if self.model_loaded or self.model_loading:
             self.logger.info("Model already loaded or loading in progress")
             return
         
         self.model_loading = True
         try:
-            # Load the model
-            await asyncio.to_thread(self.generator.load_model)
+            # Load the model, passing the websocket object
+            self.logger.info(f"Calling self.generator.load_model in a thread, passing websocket: {websocket is not None}")
+            await asyncio.to_thread(self.generator.load_model, websocket=websocket) # Pass websocket
             self.model_loaded = self.generator.is_ready()
             
             if self.model_loaded:
@@ -180,8 +182,9 @@ class TTSServer:
                 if not self.generator.is_ready():
                     # If model is not loading yet, start loading it
                     if not self.model_loading and not self.model_loaded:
-                        # Start loading the model in the background
-                        asyncio.create_task(self.preload_model())
+                        # Start loading the model in the background, passing the client's websocket
+                        self.logger.info(f"Model not ready, creating preload_model task for websocket: {websocket.remote_address}")
+                        asyncio.create_task(self.preload_model(websocket=websocket)) # Pass websocket here
                     
                     # Inform client that their request is queued
                     await websocket.send(json.dumps({
@@ -263,6 +266,7 @@ class TTSServer:
                     speaker=mapped_speaker,  # Use the mapped speaker ID
                     lang=lang,               # Pass the language
                     sample_rate=sample_rate,
+                    websocket=websocket,     # Pass websocket here
                     # max_audio_length_ms=max_audio_length_ms, # Removed parameter
                     **extra_params
                 )

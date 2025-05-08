@@ -10,12 +10,13 @@ class SesameCSMModel(BaseTTSModel):
     
     def __init__(self):
         """Initialize the Sesame CSM model"""
-        self.logger = logging.getLogger("SesameCSMModel")
+        super().__init__() # Call BaseTTSModel's __init__
+        # self.logger is now initialized by BaseTTSModel with the class name "SesameCSMModel"
         self.ready = False
         self.csm_generator = None
         self.max_audio_length_ms = 150000  # Default to 2.5 minutes
         self.sample_rate = 24000  # Default sample rate
-        self.model_loader = ModelLoader(logger=self.logger)
+        self.model_loader = ModelLoader(logger=self.logger) # Pass the already initialized logger
     
     def _do_load_csm_model(self):
         """Synchronous part of loading the CSM model."""
@@ -24,24 +25,30 @@ class SesameCSMModel(BaseTTSModel):
         self.logger.info("Thread: CSM-1B model loading process finished.")
         return csm_gen
 
-    async def load(self) -> bool:
+    async def load(self, websocket=None) -> bool:
         """Load the CSM-1B TTS model, offloading blocking parts to a thread."""
-        self.logger.info("Preparing to load CSM-1B TTS model...")
         
-        self.csm_generator = await self._run_blocking_task(self._do_load_csm_model)
-        
-        if self.csm_generator is not None:
-            # Update sample rate from the loaded model
-            if hasattr(self.csm_generator, 'sample_rate'):
-                self.sample_rate = self.csm_generator.sample_rate
-                self.logger.info(f"Using model sample rate: {self.sample_rate}")
+        async def _actual_load():
+            self.logger.info("Preparing to load CSM-1B TTS model...")
             
-            self.ready = True
-            self.logger.info("CSM-1B TTS model loaded successfully")
-            return True
-        else:
-            self.logger.error("Failed to load CSM-1B model")
-            return False
+            # The actual blocking load operation
+            loaded_generator = await self._run_blocking_task(self._do_load_csm_model)
+            
+            if loaded_generator is not None:
+                self.csm_generator = loaded_generator
+                # Update sample rate from the loaded model
+                if hasattr(self.csm_generator, 'sample_rate'):
+                    self.sample_rate = self.csm_generator.sample_rate
+                    self.logger.info(f"Using model sample rate: {self.sample_rate}")
+                
+                self.ready = True
+                self.logger.info("CSM-1B TTS model loaded successfully")
+                return True
+            else:
+                self.logger.error("Failed to load CSM-1B model")
+                return False
+        
+        return await self.run_task_with_keepalive(websocket, _actual_load())
     
     def is_ready(self) -> bool:
         """Check if the model is ready"""
@@ -64,23 +71,7 @@ class SesameCSMModel(BaseTTSModel):
             1: "Female voice"
         }
     
-    async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
-        """Generate speech from text, offloading CPU-bound work to a separate thread."""
-        # max_audio_length_ms = kwargs.get("max_audio_length_ms", self.max_audio_length_ms) # Removed parameter
-        
-        # Check language support
-        if lang != "en-US":
-            raise ValueError(f"Sesame CSM model only supports 'en-US' language, but received '{lang}'")
-            
-        if not text.strip():
-            raise ValueError("Text cannot be empty")
-        
-        if not self.ready:
-            if not await self.load(): # load() is already async and handles its own threading if necessary
-                raise RuntimeError("Model failed to load. Check logs for details.")
-        
-        text_length = len(text)
-        self.logger.info(f"Preparing to generate speech for speaker {speaker}: '{text[:100]}...' ({text_length} chars)")
+    # This is the duplicated, simpler generate_speech method. It will be removed by this diff.
 
     def _do_generate_and_encode_csm(self, text: str, speaker: int, text_length: int):
         """Synchronous part of generating and encoding speech for CSM."""
@@ -123,42 +114,47 @@ class SesameCSMModel(BaseTTSModel):
         wav_io.seek(0)
         return wav_io.read()
 
-    async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
+    async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", websocket=None, **kwargs) -> bytes:
         """Generate speech from text, offloading CPU-bound work to a separate thread."""
-        # max_audio_length_ms = kwargs.get("max_audio_length_ms", self.max_audio_length_ms) # Removed parameter
         
-        # Check language support
-        if lang != "en-US":
-            raise ValueError(f"Sesame CSM model only supports 'en-US' language, but received '{lang}'")
+        async def _actual_generate():
+            # max_audio_length_ms = kwargs.get("max_audio_length_ms", self.max_audio_length_ms) # Removed parameter
             
-        if not text.strip():
-            raise ValueError("Text cannot be empty")
-        
-        if not self.ready:
-            if not await self.load(): # load() is already async and handles its own threading if necessary
-                raise RuntimeError("Model failed to load. Check logs for details.")
-        
-        text_length = len(text)
-        self.logger.info(f"Preparing to generate speech for speaker {speaker}: '{text[:100]}...' ({text_length} chars)")
+            # Check language support
+            if lang != "en-US":
+                raise ValueError(f"Sesame CSM model only supports 'en-US' language, but received '{lang}'")
+                
+            if not text.strip():
+                raise ValueError("Text cannot be empty")
+            
+            # Pass the websocket to the load method if called from here
+            if not self.ready:
+                if not await self.load(websocket=websocket): 
+                    raise RuntimeError("Model failed to load. Check logs for details.")
+            
+            text_length = len(text)
+            self.logger.info(f"Preparing to generate speech for speaker {speaker}: '{text[:100]}...' ({text_length} chars)")
 
-        try:
-            # Verify the CSM generator exists
-            if self.csm_generator is None:
-                raise RuntimeError("CSM generator model is not loaded")
+            try:
+                # Verify the CSM generator exists
+                if self.csm_generator is None:
+                    raise RuntimeError("CSM generator model is not loaded")
 
-            # Offload the blocking operations to a separate thread
-            self.logger.info("Offloading CSM generation and encoding to a separate thread.")
-            wav_bytes = await self._run_blocking_task(self._do_generate_and_encode_csm, text, speaker, text_length)
-            
-            # Success
-            wav_size_kb = len(wav_bytes) / 1024
-            self.logger.info(f"Converted audio to WAV format, size: {wav_size_kb:.1f} KB ({len(wav_bytes)} bytes) (processed in thread)")
-            return wav_bytes
-            
-        except Exception as e:
-            self.logger.error(f"Error generating TTS audio: {str(e)}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-            
-            # Propagate the error instead of falling back to synthetic audio
-            raise RuntimeError(f"Failed to generate speech: {str(e)}")
+                # Offload the blocking operations to a separate thread
+                self.logger.info("Offloading CSM generation and encoding to a separate thread.")
+                wav_bytes = await self._run_blocking_task(self._do_generate_and_encode_csm, text, speaker, text_length)
+                
+                # Success
+                wav_size_kb = len(wav_bytes) / 1024
+                self.logger.info(f"Converted audio to WAV format, size: {wav_size_kb:.1f} KB ({len(wav_bytes)} bytes) (processed in thread)")
+                return wav_bytes
+                
+            except Exception as e:
+                self.logger.error(f"Error generating TTS audio: {str(e)}")
+                import traceback
+                self.logger.error(traceback.format_exc())
+                
+                # Propagate the error instead of falling back to synthetic audio
+                raise RuntimeError(f"Failed to generate speech: {str(e)}")
+
+        return await self.run_task_with_keepalive(websocket, _actual_generate())
