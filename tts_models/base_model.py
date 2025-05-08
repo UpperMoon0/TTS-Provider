@@ -1,7 +1,12 @@
 from abc import ABC, abstractmethod
+import asyncio # Add asyncio import
 
 class BaseTTSModel(ABC):
     """Base class for all TTS models"""
+
+    async def _run_blocking_task(self, func, *args, **kwargs):
+        """Helper to run a synchronous function in a separate thread."""
+        return await asyncio.to_thread(func, *args, **kwargs)
     
     @abstractmethod
     async def generate_speech(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
