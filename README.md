@@ -24,12 +24,10 @@ To use the Sesame CSM-1B model, you'll need to:
    huggingface-cli login
    ```
 
-2. Download the model files:
+2. Ensure access to models:
    The model will be automatically downloaded from Hugging Face when first used, but you need to have accepted the terms on the [Sesame CSM-1B model page](https://huggingface.co/sesame/csm-1b).
 
    Note: The model requires access to both `sesame/csm-1b` and `meta-llama/Llama-3.2-1B` on Hugging Face.
-
-3. Make sure the model files are placed in the correct location (typically under the `models/csm-1b/` directory).
 
 ## Running the Server
 
