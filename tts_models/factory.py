@@ -16,6 +16,7 @@ class TTSModelFactory:
         "csm": "SesameCSMModel",      # Alias
         "edge": EdgeTTSModel,         # Edge TTS is lightweight, so we can import directly
         "edge-tts": EdgeTTSModel,     # Alias
+        "zonos": "ZonosTTSModel",     # Add Zonos, store as string for on-demand import
     }
     
     @classmethod
@@ -39,11 +40,21 @@ class TTSModelFactory:
                     logger.info("Importing SesameCSMModel on demand")
                     from .sesame_csm import SesameCSMModel
                     # Update the dictionary with the actual class for future lookups
-                    cls.AVAILABLE_MODELS["sesame"] = SesameCSMModel
-                    cls.AVAILABLE_MODELS["csm"] = SesameCSMModel
+                    cls.AVAILABLE_MODELS["sesame"] = SesameCSMModel # type: ignore
+                    cls.AVAILABLE_MODELS["csm"] = SesameCSMModel # type: ignore
                     return SesameCSMModel
                 except ImportError as e:
                     logger.error(f"Failed to import SesameCSMModel: {e}")
+                    return None
+            elif model_class == "ZonosTTSModel":
+                try:
+                    logger.info("Importing ZonosTTSModel on demand")
+                    from .zonos_tts import ZonosTTSModel
+                    # Update the dictionary with the actual class for future lookups
+                    cls.AVAILABLE_MODELS["zonos"] = ZonosTTSModel # type: ignore
+                    return ZonosTTSModel
+                except ImportError as e:
+                    logger.error(f"Failed to import ZonosTTSModel: {e}")
                     return None
         
         return model_class
