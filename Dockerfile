@@ -11,8 +11,8 @@ ENV HF_HUB_DISABLE_SYMLINKS_WARNING=True
 ENV TTS_HOST=0.0.0.0
 ENV TTS_PORT=9000
 # Environment variables for NVIDIA Container Toolkit
-ENV NVIDIA_VISIBLE_DEVICES all
-ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # 2. Install Python 3.12, pip, and other system dependencies
 # Ubuntu 22.04's default python3 is older.
