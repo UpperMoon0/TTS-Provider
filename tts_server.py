@@ -34,7 +34,6 @@ class TTSServer:
         self.generator = None
         # Use absolute path to ensure files are saved in the TTS-Provider directory
         self.files_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "generated_files"
-        os.makedirs(self.files_dir, exist_ok=True)
         self.model_loading = False
         self.model_loaded = False
         self.request_queue = asyncio.Queue()

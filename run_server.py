@@ -39,10 +39,10 @@ def main():
     logger.info(f"Starting TTS server:")
     logger.info(f" - Host: {args.host}")
     logger.info(f" - Port: {args.port}")
-    # The default model will be determined by TTS_MODEL env var or TTSServer's internal default.
-    logger.info(f" - Default model: (determined by TTS_MODEL env var or internal default)")
+    # The default model is 'edge' if not specified by the client (see TTSServer).
+    logger.info(f" - Default model: 'edge' (if not specified by client)")
     
-    # The TTSServer will pick up TTS_MODEL from environment or use its own default.
+    # The TTSServer will use its own internal default ('edge') if no model is specified in a request.
     # No need to set os.environ["TTS_MODEL"] from a command-line arg here.
     
     # Create and run the server
