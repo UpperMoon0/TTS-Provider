@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import torch # Added for GPU check
 import torchaudio
 from typing import Optional, Dict, Any, Mapping
 
@@ -58,8 +59,18 @@ class TTSGenerator:
             
         self.logger.info(f"Loading TTS model: {self.model.model_name}...")
         
+        # Log GPU availability for local models
+        if self.model_name.lower() not in ["edge", "edge-tts"]:
+            if torch.cuda.is_available():
+                self.logger.info(f"CUDA GPU is available. Device count: {torch.cuda.device_count()}")
+                for i in range(torch.cuda.device_count()):
+                    self.logger.info(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
+                self.logger.info(f"  Current CUDA device: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+            else:
+                self.logger.info("CUDA GPU is not available. TTS will run on CPU.")
+        
         import asyncio
-        result = asyncio.run(self.model.load())
+        result = asyncio.run(self.model.load()) # Pass websocket if needed by model.load()
         self.ready = result
         
         if self.ready:
