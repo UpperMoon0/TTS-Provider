@@ -1,22 +1,14 @@
-# 1. Base Image: NVIDIA CUDA with a compatible CUDA version for PyTorch 2.6
-# Using CUDA 12.1 as PyTorch 2.6.0 has pre-built wheels for cu121
-# Using a -devel image includes the CUDA compiler (nvcc) and full libraries,
-# which can be helpful for dependencies like Triton that might compile extensions.
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+# Stage 1: Builder
+# Use the -devel image which includes CUDA compiler (nvcc) for dependencies like Triton
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV HF_HUB_DISABLE_SYMLINKS_WARNING=True
-# Set default host and port, can be overridden at runtime
-ENV TTS_HOST=0.0.0.0
-ENV TTS_PORT=9000
-# Environment variables for NVIDIA Container Toolkit
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV DEBIAN_FRONTEND=noninteractive
+ENV VENV_PATH=/opt/venv
 
-# 2. Install Python 3.12, pip, and other system dependencies
-# Ubuntu 22.04's default python3 is older. We'll use the deadsnakes PPA for Python 3.12.
+# Install Python 3.12, pip, git, and other system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     software-properties-common && \
@@ -29,38 +21,70 @@ RUN apt-get update && \
     git \
     ffmpeg \
     espeak-ng && \
-    # Install pip for Python 3.12 and upgrade setuptools/wheel
+    # Install pip for Python 3.12
     python3.12 -m ensurepip --upgrade && \
-    python3.12 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
     # Clean up apt cache
     rm -rf /var/lib/apt/lists/*
 
-# Make python3.12 the default python3 and ensure pip points to python3.12's pip
+# Make python3.12 the default python3 and pip
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
     python3 -m pip install --no-cache-dir --upgrade pip
 
+# Create and activate virtual environment
+RUN python3 -m venv ${VENV_PATH}
+ENV PATH="${VENV_PATH}/bin:$PATH"
+
+# Upgrade pip, setuptools, wheel in venv
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install PyTorch with CUDA support
+# Using --no-cache-dir here and for other pip installs to reduce layer size
+RUN pip install --no-cache-dir --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+
+# Copy requirements.txt and install dependencies
+# This includes dev dependencies like pytest for this builder stage if needed for any build-time checks (though typically not run here)
+# Triton will be compiled here using nvcc from the devel image
+COPY requirements.txt .
+# Create a temporary requirements file without torch/torchaudio as they are already installed
+RUN grep -vE '^torch==|^torchaudio==' requirements.txt > /requirements_no_torch.txt
+RUN pip install --no-cache-dir --ignore-installed blinker -r /requirements_no_torch.txt
+RUN rm /requirements_no_torch.txt
+
+# Stage 2: Final Runtime Image
+# Use the -runtime image which is smaller
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV HF_HUB_DISABLE_SYMLINKS_WARNING=True
+ENV TTS_HOST=0.0.0.0
+ENV TTS_PORT=9000
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV DEBIAN_FRONTEND=noninteractive
+ENV VENV_PATH=/opt/venv
+
+# Install essential runtime system dependencies
+# Python itself will be copied from the builder stage's venv
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ffmpeg \
+    espeak-ng && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy the virtual environment from the builder stage
+COPY --from=builder ${VENV_PATH} ${VENV_PATH}
+
+# Make python from venv the default
+ENV PATH="${VENV_PATH}/bin:$PATH"
+
 WORKDIR /app
 
-# 3. Install PyTorch with CUDA support
-    # Install torch 2.5.1 and torchaudio 2.5.1 for CUDA 12.1
-    RUN python3 -m pip install --no-cache-dir --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-
-# 4. Copy requirements.txt and install other dependencies
-# We'll filter out torch and torchaudio as they are already installed with CUDA support.
-COPY requirements.txt .
-# Create a temporary requirements file without torch/torchaudio
-RUN grep -vE '^torch==|^torchaudio==' requirements.txt > /app/requirements_no_torch.txt
-RUN python3 -m pip install --no-cache-dir --ignore-installed blinker -r /app/requirements_no_torch.txt
-RUN rm /app/requirements_no_torch.txt # Clean up the temporary file
-
-# Note: The 'triton' package from requirements.txt should now install the Linux/GPU version.
-# The CUDA toolkit from the base image should provide necessary components for it.
-
-# 5. Copy the rest of the application code into the container
+# Copy the rest of the application code into the container
 # This respects the .dockerignore file
 COPY . .
 
-# 6. Copy the entrypoint script and make it executable
+# Copy the entrypoint script and make it executable
 COPY entrypoint.sh .
 RUN chmod +x /app/entrypoint.sh
 
