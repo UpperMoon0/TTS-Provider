@@ -20,15 +20,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.12 \
-    python3-pip \
+    python3.12-dev \
     python3.12-venv \
     git \
     ffmpeg \
     espeak-ng && \
+    # Install pip for Python 3.12 and upgrade setuptools/wheel
+    python3.12 -m ensurepip --upgrade && \
+    python3.12 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
     # Clean up apt cache
     rm -rf /var/lib/apt/lists/*
 
@@ -39,15 +42,15 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 WORKDIR /app
 
 # 3. Install PyTorch with CUDA support
-# Install torch 2.6.0 and torchaudio 2.6.0 for CUDA 12.1
-RUN python3 -m pip install --no-cache-dir torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu121
+    # Install torch 2.5.1 and torchaudio 2.5.1 for CUDA 12.1
+    RUN python3 -m pip install --no-cache-dir --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 
 # 4. Copy requirements.txt and install other dependencies
 # We'll filter out torch and torchaudio as they are already installed with CUDA support.
 COPY requirements.txt .
 # Create a temporary requirements file without torch/torchaudio
 RUN grep -vE '^torch==|^torchaudio==' requirements.txt > /app/requirements_no_torch.txt
-RUN python3 -m pip install --no-cache-dir -r /app/requirements_no_torch.txt
+RUN python3 -m pip install --no-cache-dir --ignore-installed blinker -r /app/requirements_no_torch.txt
 RUN rm /app/requirements_no_torch.txt # Clean up the temporary file
 
 # Note: The 'triton' package from requirements.txt should now install the Linux/GPU version.
