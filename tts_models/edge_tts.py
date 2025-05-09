@@ -1,9 +1,7 @@
 import io
-import logging
-import asyncio
 import re
 import edge_tts
-from typing import Dict, List
+from typing import Dict, List # Keep Dict and List
 from .base_model import BaseTTSModel
 from pydub import AudioSegment # Keep pydub import
 
@@ -78,17 +76,43 @@ class EdgeTTSModel(BaseTTSModel):
         return "Microsoft Edge TTS"
     
     @property
-    def supported_speakers(self) -> dict:
-        """Get the supported speakers"""
-        return {
-            0: "US Male (Guy)",
-            1: "US Female (Jenny)",
-            2: "US Male (Davis)",
-            3: "US Female (Aria)", # Updated description to match voice
-        }
-        # Note: supported_speakers currently only reflects en-US. 
-        # A more dynamic approach might be needed if supporting many languages/speakers.
+    def supported_speakers(self) -> Dict[int, str]:
+        """Get the supported speakers for the default language (en-US)."""
+        # Derives from supported_languages_and_voices for "en-US"
+        all_langs_voices = self.supported_languages_and_voices
+        return all_langs_voices.get("en-US", {})
     
+    @property
+    def supported_languages_and_voices(self) -> Dict[str, Dict[int, str]]:
+        """Get all supported languages and the voices/speakers available for each."""
+        # Transform VOICE_MAPPINGS to the required format with descriptions
+        # Descriptions can be generic or derived from voice names.
+        # Example: "Speaker {id} ({voice_name})"
+        
+        # Let's try to create more meaningful descriptions based on the voice names.
+        # e.g. en-US-ChristopherNeural -> Christopher (Neural)
+        
+        processed_mappings = {}
+        for lang_code, voices in self.VOICE_MAPPINGS.items():
+            processed_mappings[lang_code] = {}
+            for speaker_id, voice_name in voices.items():
+                # Attempt to create a friendlier name
+                # Example: "en-US-ChristopherNeural" -> "ChristopherNeural" -> "Christopher Neural"
+                # Example: "ja-JP-KeitaNeural" -> "KeitaNeural" -> "Keita Neural"
+                name_part = voice_name.split('-')[-1] # "ChristopherNeural" or "NanamiNeural"
+                # Add a space before "Neural" if it exists and isn't the whole name
+                if "Neural" in name_part and name_part != "Neural":
+                    friendly_name = name_part.replace("Neural", " Neural").strip()
+                else:
+                    friendly_name = name_part
+                
+                # If the name is just "Neural" or empty after processing, use the full voice name as fallback
+                if not friendly_name or friendly_name == "Neural":
+                    friendly_name = voice_name
+
+                processed_mappings[lang_code][speaker_id] = f"{friendly_name}"
+        return processed_mappings
+
     def _sanitize_text(self, text: str) -> str:
         """
         Sanitize text to avoid issues with Edge TTS.

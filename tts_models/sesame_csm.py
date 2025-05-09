@@ -1,7 +1,6 @@
 import io
-import logging
 import torchaudio
-import asyncio # Add asyncio import
+from typing import Dict # Add Dict for type hinting
 from .base_model import BaseTTSModel
 from model_loader import ModelLoader
 
@@ -64,11 +63,21 @@ class SesameCSMModel(BaseTTSModel):
         return "Sesame CSM-1B"
     
     @property
-    def supported_speakers(self) -> dict:
-        """Get the supported speakers"""
+    def supported_speakers(self) -> Dict[int, str]:
+        """Get the supported speakers (for en-US)."""
+        # Derives from supported_languages_and_voices for "en-US"
+        all_langs_voices = self.supported_languages_and_voices
+        return all_langs_voices.get("en-US", {})
+    
+    @property
+    def supported_languages_and_voices(self) -> Dict[str, Dict[int, str]]:
+        """Get all supported languages and the voices/speakers available for each."""
+        # Sesame CSM only supports en-US with two predefined speakers.
         return {
-            0: "Male voice",
-            1: "Female voice"
+            "en-US": {
+                0: "Male voice",
+                1: "Female voice"
+            }
         }
     
     # This is the duplicated, simpler generate_speech method. It will be removed by this diff.

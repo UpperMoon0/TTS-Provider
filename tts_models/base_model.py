@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import asyncio # Add asyncio import
 import logging
+from typing import Dict # Add Dict for type hinting
 import websockets # Required for keep-alive type hints and exceptions
 
 class BaseTTSModel(ABC):
@@ -140,11 +141,27 @@ class BaseTTSModel(ABC):
     
     @property
     @abstractmethod
-    def supported_speakers(self) -> dict:
+    def supported_speakers(self) -> Dict[int, str]:
         """
-        Get the supported speakers
+        Get the supported speakers, typically for a default or primary language.
+        This might be derived from `supported_languages_and_voices` in concrete classes
+        or could be deprecated in the future.
         
         Returns:
-            Dict mapping speaker IDs to descriptions
+            Dict mapping speaker IDs (int) to descriptions (str)
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def supported_languages_and_voices(self) -> Dict[str, Dict[int, str]]:
+        """
+        Get all supported languages and the voices/speakers available for each.
+        
+        Returns:
+            A dictionary where:
+                - Keys are language codes (e.g., "en-US", "ja-JP").
+                - Values are dictionaries mapping speaker IDs (int) to speaker descriptions (str).
+                Example: {"en-US": {0: "Male", 1: "Female"}, "ja-JP": {0: "Standard"}}
         """
         pass

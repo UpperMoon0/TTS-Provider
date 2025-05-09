@@ -1,5 +1,5 @@
-torch==2.4.0
-torchaudio>=2.0.0
+torch==2.6.0
+torchaudio==2.6.0
 zonos @ git+https://github.com/Zyphra/Zonos.git@main 
 tokenizers==0.21.0
 transformers>=4.30.0
@@ -10,8 +10,8 @@ torchao==0.9.0
 silentcipher @ git+https://github.com/SesameAILabs/silentcipher@master
 websockets==11.0.3
 python-dotenv==1.0.0
-numpy==1.26.2
-soundfile==0.12.1
+numpy==2.2.2
+soundfile==0.13.1
 pytest==8.3.5
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0

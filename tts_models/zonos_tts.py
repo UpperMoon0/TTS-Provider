@@ -1,20 +1,20 @@
-import asyncio
 import logging
 import io
 import os
+from typing import Dict # Add Dict for type hinting
 
-import torch
 import torchaudio
 
 from .base_model import BaseTTSModel
 # Attempt to import Zonos, with a fallback/warning if not installed
 try:
     from zonos.model import Zonos
-    from zonos.conditioning import make_cond_dict
+    from zonos.conditioning import make_cond_dict, supported_language_codes
     from zonos.utils import DEFAULT_DEVICE
 except ImportError:
     Zonos = None
     make_cond_dict = None
+    supported_language_codes = [] # Provide an empty list as a fallback
     DEFAULT_DEVICE = "cpu"
     logging.getLogger("ZonosTTSModel").warning(
         "Zonos library not found. Please ensure 'zonos' is installed. "
@@ -22,10 +22,10 @@ except ImportError:
     )
 
 # Define a path for reference audio files. Users will need to place files here.
-# For example, for speaker 0, a file named "0.wav" or "default.wav" would be expected.
+# For example, for speaker 0, a file named "0.wav" or "default_speaker.wav" would be expected.
 # This path is relative to the tts_models directory.
 REFERENCE_AUDIO_DIR = os.path.join(os.path.dirname(__file__), "zonos_reference_audio")
-DEFAULT_REFERENCE_AUDIO = os.path.join(REFERENCE_AUDIO_DIR, "default_speaker.wav")
+# DEFAULT_REFERENCE_AUDIO is no longer a single default, but determined by speaker ID.
 
 
 class ZonosTTSModel(BaseTTSModel):
@@ -56,14 +56,8 @@ class ZonosTTSModel(BaseTTSModel):
             self.model = await self._run_blocking_task(Zonos.from_pretrained, "Zyphra/Zonos-v0.1-transformer", device=DEFAULT_DEVICE)
             self.is_model_loaded = True
             self.logger.info("Zonos model loaded successfully.")
-            
-            # Check for default reference audio
-            if not os.path.exists(DEFAULT_REFERENCE_AUDIO):
-                self.logger.warning(
-                    f"Default reference audio not found: {DEFAULT_REFERENCE_AUDIO}. "
-                    "Voice cloning for speaker 0 might fail or use a fallback if any. "
-                    "Please place a WAV file at this location for default speaker."
-                )
+            # No longer checking for a single DEFAULT_REFERENCE_AUDIO on load,
+            # as speaker-specific files will be checked during generation.
             return True
         except Exception as e:
             self.logger.error(f"Failed to load Zonos model: {e}", exc_info=True)
@@ -91,19 +85,77 @@ class ZonosTTSModel(BaseTTSModel):
     def is_ready(self) -> bool:
         return self.is_model_loaded and self.model is not None
 
+    def _get_cloned_speaker_options(self) -> Dict[int, str]:
+        """Helper to generate speaker options based on files in REFERENCE_AUDIO_DIR."""
+        cloned_speakers = {}
+        if not os.path.exists(REFERENCE_AUDIO_DIR):
+            self.logger.warning(f"Reference audio directory not found: {REFERENCE_AUDIO_DIR}")
+            return {0: "Default Cloned (No reference file found)"}
+
+        # Check for default_speaker.wav for speaker 0
+        default_speaker_path = os.path.join(REFERENCE_AUDIO_DIR, "default_speaker.wav")
+        if os.path.exists(default_speaker_path):
+            cloned_speakers[0] = "Cloned (default_speaker.wav)"
+        else:
+            alt_default_path = os.path.join(REFERENCE_AUDIO_DIR, "0.wav")
+            if os.path.exists(alt_default_path):
+                cloned_speakers[0] = "Cloned (0.wav)"
+            else:
+                cloned_speakers[0] = "Cloned (No reference for ID 0)"
+        
+        # Scan for other numbered speaker files
+        for i in range(1, 100):  # Scan for up to 100 numbered speakers
+            speaker_file_path = os.path.join(REFERENCE_AUDIO_DIR, f"{i}.wav")
+            speaker_file_path_alt = os.path.join(REFERENCE_AUDIO_DIR, f"speaker_{i}.wav")
+            
+            if os.path.exists(speaker_file_path):
+                cloned_speakers[i] = f"Cloned ({i}.wav)"
+            elif os.path.exists(speaker_file_path_alt):
+                 cloned_speakers[i] = f"Cloned (speaker_{i}.wav)"
+        
+        if not cloned_speakers: # Fallback if directory is empty
+            cloned_speakers[0] = "Cloned (No reference files in directory)"
+        return cloned_speakers
+
     @property
-    def supported_speakers(self) -> dict:
-        # Zonos uses voice cloning. We define a single "default" speaker ID.
-        # Users would need to place a reference audio file (e.g., default_speaker.wav)
-        # in the REFERENCE_AUDIO_DIR.
-        return {
-            0: "Default (Voice clone from reference audio)"
-            # Potentially, more IDs could map to different files in REFERENCE_AUDIO_DIR
-        }
+    def supported_speakers(self) -> Dict[int, str]:
+        """Get the supported speakers for a default language (e.g., en-us)."""
+        # Zonos supports cloned speakers for any of its languages.
+        # This property will return the speaker options for 'en-us' as a default.
+        all_langs_voices = self.supported_languages_and_voices
+        return all_langs_voices.get("en-us", self._get_cloned_speaker_options())
+
+
+    @property
+    def supported_languages_and_voices(self) -> Dict[str, Dict[int, str]]:
+        """Get all supported languages and the voices/speakers available for each."""
+        langs_and_voices = {}
+        cloned_speaker_options = self._get_cloned_speaker_options()
+        
+        if not supported_language_codes: # Fallback if zonos library not fully loaded
+            self.logger.warning("Zonos supported_language_codes not available. Reporting limited language support.")
+            return {"en-us": cloned_speaker_options} # Default to en-us
+
+        for lang_code in supported_language_codes:
+            langs_and_voices[lang_code.lower()] = cloned_speaker_options
+            
+        if not langs_and_voices: # Should not happen if supported_language_codes has items
+             return {"en-us": cloned_speaker_options}
+             
+        return langs_and_voices
 
     def _map_language_code(self, lang_code: str) -> str:
-        """Maps standard language codes (e.g., en-US) to Zonos format (e.g., en-us)."""
-        return lang_code.lower()
+        """Maps standard language codes (e.g., en-US) to Zonos format (e.g., en-us)
+           and validates against supported codes."""
+        mapped_code = lang_code.lower()
+        if supported_language_codes and mapped_code not in supported_language_codes:
+            self.logger.warning(
+                f"Language code '{mapped_code}' (from '{lang_code}') is not in Zonos supported_language_codes. "
+                f"Attempting to use it anyway. Available: {supported_language_codes[:10]}..."
+            )
+            # Optionally, raise an error or fallback to a default language:
+            # raise ValueError(f"Unsupported language code for Zonos: {mapped_code}")
+        return mapped_code
 
     async def _generate_speech_async(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
         if not self.is_ready():
@@ -116,23 +168,37 @@ class ZonosTTSModel(BaseTTSModel):
 
         try:
             # Determine reference audio path based on speaker ID
-            # For now, only speaker 0 is supported and maps to DEFAULT_REFERENCE_AUDIO
-            reference_audio_path = DEFAULT_REFERENCE_AUDIO
-            if speaker != 0:
-                self.logger.warning(f"Speaker ID {speaker} requested, but only speaker 0 (default) is currently configured for Zonos. Using default reference.")
-            
-            if not os.path.exists(reference_audio_path):
-                self.logger.error(f"Reference audio file not found: {reference_audio_path}. Cannot perform voice cloning.")
-                raise FileNotFoundError(f"Required reference audio not found: {reference_audio_path}")
+            reference_audio_path = None
+            possible_filenames = []
+            if speaker == 0:
+                possible_filenames.extend([
+                    os.path.join(REFERENCE_AUDIO_DIR, "default_speaker.wav"),
+                    os.path.join(REFERENCE_AUDIO_DIR, "0.wav")
+                ])
+            else:
+                possible_filenames.extend([
+                    os.path.join(REFERENCE_AUDIO_DIR, f"{speaker}.wav"),
+                    os.path.join(REFERENCE_AUDIO_DIR, f"speaker_{speaker}.wav")
+                ])
 
-            self.logger.info(f"Loading reference audio from: {reference_audio_path}")
+            for fname in possible_filenames:
+                if os.path.exists(fname):
+                    reference_audio_path = fname
+                    break
+            
+            if reference_audio_path is None:
+                err_msg = f"Reference audio file for speaker ID {speaker} not found in {REFERENCE_AUDIO_DIR}. Searched for: {possible_filenames}"
+                self.logger.error(err_msg)
+                raise FileNotFoundError(err_msg)
+
+            self.logger.info(f"Loading reference audio from: {reference_audio_path} for speaker ID {speaker}")
             ref_wav, ref_sr = await self._run_blocking_task(torchaudio.load, reference_audio_path)
             
-            self.logger.info("Creating speaker embedding...")
+            self.logger.info(f"Creating speaker embedding for speaker ID {speaker}...")
             speaker_embedding = await self._run_blocking_task(self.model.make_speaker_embedding, ref_wav, ref_sr)
             
-            mapped_lang = self._map_language_code(lang)
-            self.logger.info(f"Preparing conditioning for lang '{mapped_lang}'...")
+            mapped_lang = self._map_language_code(lang) # This now includes validation
+            self.logger.info(f"Preparing conditioning for lang '{mapped_lang}' (original: '{lang}')...")
             cond_dict = make_cond_dict(text=text, speaker=speaker_embedding, language=mapped_lang)
             conditioning = await self._run_blocking_task(self.model.prepare_conditioning, cond_dict)
             
