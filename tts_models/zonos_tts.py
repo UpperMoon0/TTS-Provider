@@ -21,11 +21,7 @@ except ImportError:
         "See Zonos documentation for installation instructions."
     )
 
-# Define a path for reference audio files. Users will need to place files here.
-# For example, for speaker 0, a file named "0.wav" or "default_speaker.wav" would be expected.
-# This path is relative to the tts_models directory.
 REFERENCE_AUDIO_DIR = os.path.join(os.path.dirname(__file__), "zonos_reference_audio")
-# DEFAULT_REFERENCE_AUDIO is no longer a single default, but determined by speaker ID.
 
 
 class ZonosTTSModel(BaseTTSModel):

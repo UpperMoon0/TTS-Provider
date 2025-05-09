@@ -4,6 +4,7 @@ A flexible WebSocket-based Text-to-Speech service that supports multiple TTS bac
 
 - Microsoft Edge TTS (default)
 - Sesame CSM-1B
+- Zonos TTS
 
 ## Installation
 
@@ -28,6 +29,27 @@ To use the Sesame CSM-1B model, you'll need to:
    The model will be automatically downloaded from Hugging Face when first used, but you need to have accepted the terms on the [Sesame CSM-1B model page](https://huggingface.co/sesame/csm-1b).
 
    Note: The model requires access to both `sesame/csm-1b` and `meta-llama/Llama-3.2-1B` on Hugging Face.
+
+### Installing Zonos TTS Model
+
+To use the Zonos TTS model, you'll need to:
+
+1.  **Install System Dependencies:**
+    Zonos requires `espeak-ng`. On Debian/Ubuntu, you can install it with:
+    ```bash
+    sudo apt-get update && sudo apt-get install -y espeak-ng
+    ```
+    (Note: The `Dockerfile` already includes this step.)
+
+2.  **Python Dependencies:**
+    The Zonos library will be installed automatically via `pip install -r requirements.txt`. It uses a specific fork (`UpperMoon0/nstut-zonos-fork`) which includes packaging fixes to ensure all submodules are correctly installed.
+
+3.  **Reference Audio:**
+    Zonos performs voice cloning using reference audio files. You need to place your `.wav` reference audio files in the `tts_models/zonos_reference_audio/` directory. For example:
+    - `0.wav` or `default_speaker.wav` for speaker ID 0.
+    - `1.wav` for speaker ID 1, etc.
+    - `speaker_X.wav` can also be used for speaker ID X.
+    Refer to `tts_models/zonos_tts.py` for more details on speaker mapping and file naming. An example reference audio file (`1.wav`) is provided.
 
 ## Running the Server
 
@@ -109,6 +131,7 @@ Clients can select which model to use in each request by including a `model` par
 
 - `sesame` (or `csm`) - Use Sesame CSM-1B model
 - `edge` (or `edge-tts`) - Use Microsoft Edge TTS
+- `zonos` - Use Zonos TTS model
 
 ## API Documentation
 
@@ -181,3 +204,4 @@ The response includes the available speaker mappings to help you select the appr
 
 - **Edge TTS**: Loaded immediately at startup since it's lightweight
 - **Sesame CSM-1B**: Loaded on-demand when the first request using it is received
+- **Zonos TTS**: Loaded on-demand when the first request using it is received

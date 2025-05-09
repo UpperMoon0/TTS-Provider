@@ -1,6 +1,6 @@
 torch==2.6.0
 torchaudio==2.6.0
-zonos @ git+https://github.com/Zyphra/Zonos.git@main 
+zonos @ git+https://github.com/UpperMoon0/nstut-zonos-fork.git@main
 tokenizers==0.21.0
 transformers>=4.30.0
 huggingface_hub>=0.17.0
