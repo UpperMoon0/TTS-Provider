@@ -78,6 +78,11 @@ class ZonosTTSModel(BaseTTSModel):
     def model_name(self) -> str:
         return "zonos"
 
+    @property
+    def model_type(self) -> str:
+        """Get the type of the model (e.g., "api" or "local")"""
+        return "local"
+
     def get_sample_rate(self) -> int:
         # Zonos natively outputs at 44.1 kHz
         return 44100

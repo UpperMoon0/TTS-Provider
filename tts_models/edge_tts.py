@@ -74,6 +74,11 @@ class EdgeTTSModel(BaseTTSModel):
     def model_name(self) -> str:
         """Get the name of the model"""
         return "Microsoft Edge TTS"
+
+    @property
+    def model_type(self) -> str:
+        """Get the type of the model (e.g., "api" or "local")"""
+        return "api"
     
     @property
     def supported_speakers(self) -> Dict[int, str]:

@@ -14,7 +14,7 @@ WORKDIR /app
 # Install system dependencies (git is needed for silentcipher, ffmpeg for pydub)
 # Clean up apt cache afterwards to keep image size down
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git ffmpeg && \
+    apt-get install -y --no-install-recommends git ffmpeg espeak-ng && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container

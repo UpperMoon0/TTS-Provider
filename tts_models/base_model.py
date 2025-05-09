@@ -165,3 +165,14 @@ class BaseTTSModel(ABC):
                 Example: {"en-US": {0: "Male", 1: "Female"}, "ja-JP": {0: "Standard"}}
         """
         pass
+
+    @property
+    @abstractmethod
+    def model_type(self) -> str:
+        """
+        Get the type of the model (e.g., "api" or "local")
+        
+        Returns:
+            Model type as a string
+        """
+        pass
