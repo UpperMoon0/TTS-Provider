@@ -13,10 +13,15 @@ ENV TTS_PORT=9000
 # Environment variables for NVIDIA Container Toolkit
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV DEBIAN_FRONTEND=noninteractive
 
 # 2. Install Python 3.12, pip, and other system dependencies
-# Ubuntu 22.04's default python3 is older.
+# Ubuntu 22.04's default python3 is older. We'll use the deadsnakes PPA for Python 3.12.
 RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.12 \
     python3-pip \
