@@ -54,11 +54,11 @@ To use the Zonos TTS model, you'll need to:
 ## Running the Server
 
 ```bash
-# Default command (uses Edge TTS)
+# Default command (uses Edge TTS by default if no model is specified in the request)
 python -m run_server
 ```
 
-Note: The Sesame CSM-1B model is loaded on-demand when the first request that uses it is received, not at startup. This helps reduce startup time and memory usage until the model is actually needed.
+Note: All TTS models (Edge, Sesame CSM-1B, Zonos) are loaded lazily. The server initializes, but the actual model weights are loaded into memory only when the first request requiring that specific model is received, or if preloading is triggered. This approach minimizes startup time and initial memory footprint.
 
 ## Client Usage
 
@@ -144,10 +144,8 @@ Basic request format:
   "text": "Text to convert to speech",
   "speaker": 0,
   "sample_rate": 24000,
-  "response_mode": "stream",
-  "model": "edge",  // Optional, specify model type (edge or sesame)
-  "lang": "en-US"   // Optional, specify language (default: "en-US")
-  // "max_audio_length_ms" parameter removed
+  "model": "edge",  // Optional. Specifies model type (e.g., "edge", "sesame", "zonos"). Defaults to "edge" if not provided.
+  "lang": "en-US"   // Optional. Specifies language. Defaults to "en-US".
 }
 ```
 
@@ -202,6 +200,11 @@ The response includes the available speaker mappings to help you select the appr
 
 ## Model Loading Behavior
 
-- **Edge TTS**: Loaded immediately at startup since it's lightweight
-- **Sesame CSM-1B**: Loaded on-demand when the first request using it is received
-- **Zonos TTS**: Loaded on-demand when the first request using it is received
+All TTS models are loaded lazily to optimize startup time and resource usage:
+
+- The server initializes with a default model configuration (currently "edge").
+- However, the actual loading of any model's weights and resources into memory occurs only when:
+    1. The first WebSocket request that requires that specific model is received.
+    2. An explicit preload operation is triggered (e.g., during server startup if configured, or via a specific command if implemented).
+- If a request comes in for a model that isn't loaded yet, the request is queued, and the model loading process begins. Once loaded, queued requests for that model are processed.
+- This ensures that only necessary models consume resources, and the server starts quickly.
