@@ -58,6 +58,3 @@ Desktop.ini
 # Docker specific
 Dockerfile
 .dockerignore
-
-# Specific project folders to ignore
-nstut-csm-fork/
