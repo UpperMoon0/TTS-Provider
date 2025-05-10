@@ -67,7 +67,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.12 \
     ffmpeg \
-    espeak-ng && \
+    espeak-ng \
+    build-essential && \
     rm -rf /var/lib/apt/lists/*
 
 # Make python3.12 the default python3
