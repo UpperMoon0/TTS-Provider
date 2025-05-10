@@ -30,11 +30,7 @@ RUN apt-get update && \
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
     python3 -m pip install --no-cache-dir --upgrade pip
 
-# Create and activate virtual environment
-RUN python3 -m venv ${VENV_PATH}
-ENV PATH="${VENV_PATH}/bin:$PATH"
-
-# Upgrade pip, setuptools, wheel in venv
+# Upgrade pip, setuptools, wheel
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install PyTorch with CUDA support
@@ -62,21 +58,27 @@ ENV TTS_PORT=9000
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV DEBIAN_FRONTEND=noninteractive
-ENV VENV_PATH=/opt/venv
 
-# Install essential runtime system dependencies
-# Python itself will be copied from the builder stage's venv
+# Install Python 3.12 runtime and essential system dependencies
 RUN apt-get update && \
+    apt-get install -y --no-install-recommends software-properties-common && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
+    python3.12 \
     ffmpeg \
     espeak-ng && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy the virtual environment from the builder stage
-COPY --from=builder ${VENV_PATH} ${VENV_PATH}
+# Make python3.12 the default python3
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 
-# Make python from venv the default
-ENV PATH="${VENV_PATH}/bin:$PATH"
+# Copy installed Python packages and executables from the builder stage
+COPY --from=builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+# Ensure the main python3.12 interpreter and its symlink are correctly in place if not already handled by apt install
+COPY --from=builder /usr/bin/python3.12 /usr/bin/python3.12
+COPY --from=builder /usr/bin/python3 /usr/bin/python3
 
 WORKDIR /app
 
