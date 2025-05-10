@@ -66,6 +66,7 @@ RUN apt-get update && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.12 \
+    python3.12-dev \
     ffmpeg \
     espeak-ng \
     build-essential && \
