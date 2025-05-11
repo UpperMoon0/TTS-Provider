@@ -62,6 +62,33 @@ python -m run_server
 
 Note: All TTS models (Edge, Sesame CSM-1B, Zonos) are loaded lazily. The server initializes, but the actual model weights are loaded into memory only when the first request requiring that specific model is received, or if preloading is triggered. This approach minimizes startup time and initial memory footprint.
 
+## Running with Docker
+
+You can also run the TTS Provider server using Docker.
+
+1. **Pull the Docker Image:**
+
+    ```bash
+    docker pull nstut/tts-provider
+    ```
+
+2. **Run the Docker Container:**
+
+    ```bash
+    docker run --rm -itd --gpus all --name TTS-Provider -p 9000:9000 -e HF_TOKEN=<YOUR_HF_TOKEN> nstut/tts-provider
+    ```
+
+    **Explanation of the command:**
+    - `--rm`: Automatically remove the container when it exits.
+    - `-itd`: Run in interactive, TTY, and detached (background) mode.
+    - `--gpus all`: (Optional) If you have NVIDIA GPUs and want to use them for models like Sesame CSM and Zonos, this flag enables GPU access. Remove if you don't have GPUs or don't need GPU support.
+    - `--name TTS-Provider`: Assigns a name to the container for easier management.
+    - `-p 9000:9000`: Maps port 9000 on your host to port 9000 in the container.
+    - `-e HF_TOKEN=<YOUR_HF_TOKEN>`: Sets the Hugging Face token as an environment variable. **Replace `<YOUR_HF_TOKEN>` with your actual Hugging Face token.** This is required if you plan to use models like Sesame CSM-1B that need to be downloaded from Hugging Face.
+    - `nstut/tts-provider`: The name of the Docker image to run.
+
+    The server will then be accessible at `ws://localhost:9000`.
+
 ## Client Usage
 
 Clients can connect to the server via WebSocket. See `tts_client.py` for a complete client implementation.
