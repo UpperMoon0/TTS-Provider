@@ -27,6 +27,84 @@ REFERENCE_AUDIO_DIR = os.path.join(os.path.dirname(__file__), "zonos_reference_a
 class ZonosTTSModel(BaseTTSModel):
     """TTS Model for Zonos"""
 
+    # This map is based on eSpeak NG identifiers, which Zonos uses for phonemization.
+    # It aims to map common inputs to the codes Zonos likely expects for its core supported languages.
+    # Keys should be normalized (lowercase, hyphenated).
+    PREFERRED_ZONOS_LANG_MAP = {
+        # English (Defaulting to American English as per Zonos examples)
+        "en": "en-us",
+        "english": "en-us",
+        "en-us": "en-us",
+        "en-gb": "en",       # British English (eSpeak has 'en' for British) - Zonos might prefer en-us still
+        # Japanese
+        "ja": "ja",
+        "japanese": "ja",
+        "ja-jp": "ja",
+        # Chinese (Defaulting to Mandarin)
+        "zh": "cmn",
+        "chinese": "cmn",
+        "cmn": "cmn",        # Mandarin
+        "zh-cn": "cmn",
+        "yue": "yue",        # Cantonese
+        "zh-hk": "yue",
+        # French (Defaulting to France)
+        "fr": "fr",
+        "french": "fr",
+        "fr-fr": "fr",
+        "fr-ca": "fr", # Canadian French, map to fr, Zonos might handle regionality internally or not
+        # German
+        "de": "de",
+        "german": "de",
+        "de-de": "de",
+        # Spanish (Defaulting to Spain)
+        "es": "es",
+        "spanish": "es",
+        "es-es": "es",
+        "es-mx": "es-419",   # Latin American Spanish
+        "es-us": "es-419",   # US Spanish, map to Latin American
+        "es-419": "es-419",
+        # Korean
+        "ko": "ko",
+        "korean": "ko",
+        "ko-kr": "ko",
+        # Russian
+        "ru": "ru",
+        "russian": "ru",
+        "ru-ru": "ru",
+        # Portuguese (Defaulting to Portugal)
+        "pt": "pt",
+        "portuguese": "pt",
+        "pt-pt": "pt",
+        "pt-br": "pt-br",    # Brazilian Portuguese
+        # Italian
+        "it": "it",
+        "italian": "it",
+        "it-it": "it",
+        # Arabic
+        "ar": "ar",
+        "arabic": "ar",
+        # Hindi
+        "hi": "hi",
+        "hindi": "hi",
+        "hi-in": "hi",
+        # Dutch
+        "nl": "nl",
+        "dutch": "nl",
+        "nl-nl": "nl",
+        # Polish
+        "pl": "pl",
+        "polish": "pl",
+        "pl-pl": "pl",
+        # Turkish
+        "tr": "tr",
+        "turkish": "tr",
+        "tr-tr": "tr",
+        # Vietnamese (Defaulting to Southern Vietnamese)
+        "vi": "vi-vn-x-south",
+        "vietnamese": "vi-vn-x-south",
+        "vi-vn": "vi-vn-x-south",
+    }
+
     def __init__(self):
         super().__init__()
         self.model = None
@@ -146,17 +224,98 @@ class ZonosTTSModel(BaseTTSModel):
         return langs_and_voices
 
     def _map_language_code(self, lang_code: str) -> str:
-        """Maps standard language codes (e.g., en-US) to Zonos format (e.g., en-us)
-           and validates against supported codes."""
-        mapped_code = lang_code.lower()
-        if supported_language_codes and mapped_code not in supported_language_codes:
-            self.logger.warning(
-                f"Language code '{mapped_code}' (from '{lang_code}') is not in Zonos supported_language_codes. "
-                f"Attempting to use it anyway. Available: {supported_language_codes[:10]}..."
+        """
+        Maps standard language codes (e.g., en-US, en_GB, en) to a Zonos-supported format.
+        Uses a preferred map first, then falls back to checking supported_language_codes.
+        Zonos typically expects codes like 'en-us' or 'ja'.
+        """
+        if not lang_code:
+            self.logger.warning("Empty language code provided, defaulting to 'en-us' (from preferred map).")
+            return self.PREFERRED_ZONOS_LANG_MAP.get("en", "en-us")
+
+        normalized_input = lang_code.lower().replace('_', '-')
+
+        # 1. Check preferred explicit mappings
+        if normalized_input in self.PREFERRED_ZONOS_LANG_MAP:
+            mapped_code = self.PREFERRED_ZONOS_LANG_MAP[normalized_input]
+            self.logger.info(
+                f"Input lang '{lang_code}' (normalized to '{normalized_input}') mapped to preferred Zonos code '{mapped_code}'."
             )
-            # Optionally, raise an error or fallback to a default language:
-            # raise ValueError(f"Unsupported language code for Zonos: {mapped_code}")
-        return mapped_code
+            return mapped_code
+        
+        # Also check the base language part (e.g., "en" from "en-au") against preferred map
+        lang_part_of_input = normalized_input.split('-')[0]
+        if lang_part_of_input in self.PREFERRED_ZONOS_LANG_MAP:
+            mapped_code = self.PREFERRED_ZONOS_LANG_MAP[lang_part_of_input]
+            self.logger.info(
+                f"Base lang part '{lang_part_of_input}' of input '{lang_code}' mapped to preferred Zonos code '{mapped_code}'."
+            )
+            return mapped_code
+
+        # 2. If not in preferred map, use logic with Zonos's supported_language_codes
+        self.logger.info(
+            f"Input lang '{lang_code}' (normalized: '{normalized_input}') not in preferred map. "
+            "Proceeding with Zonos supported_language_codes list."
+        )
+
+        if not supported_language_codes:
+            self.logger.warning(
+                "Zonos supported_language_codes not available and no preferred mapping found for '{normalized_input}'. "
+                f"Using normalized input code '{normalized_input}' directly."
+            )
+            return normalized_input
+
+        # 2a. Direct match in supported_language_codes
+        if normalized_input in supported_language_codes:
+            self.logger.info(
+                f"Normalized input '{normalized_input}' directly found in Zonos supported_language_codes."
+            )
+            return normalized_input
+
+        # lang_part_of_input was already calculated above
+        
+        # 2b. Generic input (e.g., "en"), try to find specific variant in supported_language_codes
+        # This applies if normalized_input was generic (e.g. "fr") and not in preferred map.
+        if lang_part_of_input == normalized_input:
+            for slc in supported_language_codes:
+                if slc.startswith(lang_part_of_input + "-"):
+                    self.logger.info(
+                        f"Generic lang '{normalized_input}' (not in preferred map) mapped to first specific "
+                        f"Zonos code in supported_language_codes: '{slc}'."
+                    )
+                    return slc
+            # If the generic part itself (e.g. "es") is in supported_language_codes
+            if lang_part_of_input in supported_language_codes:
+                self.logger.info(
+                    f"Generic lang '{lang_part_of_input}' (not in preferred map) directly found in Zonos supported_language_codes."
+                )
+                return lang_part_of_input
+        
+        # 2c. Specific input (e.g., "en-au") not in preferred map and not directly in supported_language_codes.
+        #     Try to fall back to another variant of the same base language in supported_language_codes.
+        for slc in supported_language_codes:
+            if slc.startswith(lang_part_of_input + "-"):
+                self.logger.warning(
+                    f"Lang '{normalized_input}' (not in preferred map or supported_language_codes) "
+                    f"falling back to first available variant for '{lang_part_of_input}' in supported_language_codes: '{slc}'."
+                )
+                return slc
+        
+        # Fallback: if the base language part itself (e.g. "es" from "es-mx") is in supported_language_codes
+        if lang_part_of_input in supported_language_codes:
+            self.logger.warning(
+                f"Lang '{normalized_input}' not mappable, falling back to base language part '{lang_part_of_input}' "
+                "as it is in supported_language_codes."
+            )
+            return lang_part_of_input
+
+        # 3. No mapping found through any primary logic.
+        self.logger.warning(
+            f"Lang '{normalized_input}' (from input '{lang_code}') has no preferred mapping and is not found or mappable "
+            f"within Zonos supported_language_codes ({supported_language_codes[:10]}...). "
+            f"Attempting to use '{normalized_input}' directly with Zonos."
+        )
+        return normalized_input
 
     async def _generate_speech_async(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
         if not self.is_ready():
