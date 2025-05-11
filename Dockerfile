@@ -17,6 +17,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-dev \
+    python3.12-distutils \
     # python3.12-venv is removed as it's not used in the builder stage
     git \
     ffmpeg \
