@@ -58,6 +58,8 @@ ENV TTS_PORT=9000
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV DEBIAN_FRONTEND=noninteractive
+# Define Hugging Face cache directory
+ENV HF_HOME=/app/huggingface_cache
 
 # Install Python 3.12 runtime and essential system dependencies
 RUN apt-get update && \

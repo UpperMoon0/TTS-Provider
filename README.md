@@ -84,10 +84,52 @@ You can also run the TTS Provider server using Docker.
     - `--gpus all`: (Optional) If you have NVIDIA GPUs and want to use them for models like Sesame CSM and Zonos, this flag enables GPU access. Remove if you don't have GPUs or don't need GPU support.
     - `--name TTS-Provider`: Assigns a name to the container for easier management.
     - `-p 9000:9000`: Maps port 9000 on your host to port 9000 in the container.
-    - `-e HF_TOKEN=<YOUR_HF_TOKEN>`: Sets the Hugging Face token as an environment variable. **Replace `<YOUR_HF_TOKEN>` with your actual Hugging Face token.** This is required if you plan to use models like Sesame CSM-1B that need to be downloaded from Hugging Face.
+    - `-e HF_TOKEN=<YOUR_HF_TOKEN>`: Sets the Hugging Face token as an environment variable. **Replace `<YOUR_HF_TOKEN>` with your actual Hugging Face token.** This is required if you plan to use models like Sesame CSM-1B or Zonos that need to be downloaded from Hugging Face.
     - `nstut/tts-provider`: The name of the Docker image to run.
 
     The server will then be accessible at `ws://localhost:9000`.
+
+### Persisting Downloaded Models with Docker Volumes
+
+By default, when a Docker container is removed, any data written inside it (like downloaded Hugging Face models) is lost. To prevent re-downloading models every time you start a new container, you should use a Docker volume to persist the Hugging Face cache.
+
+The `Dockerfile` is configured to use `/app/huggingface_cache` as the Hugging Face home directory (`HF_HOME`). You can mount a volume to this location:
+
+**1. Using a Named Volume (Recommended):**
+
+First, create a named volume if you haven't already:
+
+```bash
+docker volume create tts_provider_hf_cache
+```
+
+Then, run your container, mounting this volume:
+
+```bash
+docker run --rm -itd --gpus all --name TTS-Provider \
+  -p 9000:9000 \
+  -e HF_TOKEN=<YOUR_HF_TOKEN> \
+  -v tts_provider_hf_cache:/app/huggingface_cache \
+  nstut/tts-provider
+```
+
+This will store the downloaded models in the `tts_provider_hf_cache` volume, and they will be available to subsequent containers that mount the same volume.
+
+**2. Using a Host Directory (Bind Mount):**
+
+Alternatively, you can map a directory from your host machine into the container:
+
+```bash
+docker run --rm -itd --gpus all --name TTS-Provider \
+  -p 9000:9000 \
+  -e HF_TOKEN=<YOUR_HF_TOKEN> \
+  -v /path/on/your/host/hf_cache:/app/huggingface_cache \
+  nstut/tts-provider
+```
+
+Replace `/path/on/your/host/hf_cache` with an actual directory path on your computer.
+
+Using either of these methods will ensure that models downloaded by Hugging Face (for both Sesame CSM and Zonos) are cached persistently.
 
 ## Client Usage
 
