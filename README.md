@@ -11,7 +11,7 @@ A flexible WebSocket-based Text-to-Speech service that supports multiple TTS bac
 1. Clone this repository
 2. Install the required packages:
 
-   ```
+   ```bash
    pip install -r requirements.txt
    ```
 
@@ -34,17 +34,19 @@ To use the Sesame CSM-1B model, you'll need to:
 
 To use the Zonos TTS model, you'll need to:
 
-1.  **Install System Dependencies:**
+1. **Install System Dependencies:**
     Zonos requires `espeak-ng`. On Debian/Ubuntu, you can install it with:
+
     ```bash
     sudo apt-get update && sudo apt-get install -y espeak-ng
     ```
+
     (Note: The `Dockerfile` already includes this step.)
 
-2.  **Python Dependencies:**
+2. **Python Dependencies:**
     The Zonos library will be installed automatically via `pip install -r requirements.txt`. It uses a specific fork (`UpperMoon0/nstut-zonos-fork`) which includes packaging fixes to ensure all submodules are correctly installed.
 
-3.  **Reference Audio:**
+3. **Reference Audio:**
     Zonos performs voice cloning using reference audio files. You need to place your `.wav` reference audio files in the `tts_models/zonos_reference_audio/` directory. For example:
     - `0.wav` or `default_speaker.wav` for speaker ID 0.
     - `1.wav` for speaker ID 1, etc.
@@ -116,14 +118,16 @@ The TTS Provider supports a unified speaker ID system across different models. Y
 
 ### Speaker ID Reference Table
 
-| ID | Description | Sesame CSM | Edge TTS |
-|----|-------------|------------|----------|
-| 0 | Default Male Voice | Male Voice | US Male (Guy) |
-| 1 | Default Female Voice | Female Voice | US Female (Jenny) |
-| 2 | Alternative Male Voice | Male Voice | US Male (Davis) |
-| 3 | Alternative Female Voice | Female Voice | UK Female (Sonia) |
+| ID | General Description | Sesame CSM | Edge TTS | Zonos TTS |
+|----|---------------------|------------|----------|-----------|
+| 0  | Primary/Default     | Male Voice | US Male (Guy) | Cloned (e.g., `0.wav`/`default_speaker.wav`) |
+| 1  | Secondary           | Female Voice | US Female (Jenny) | Cloned (e.g., `1.wav`) |
+| 2  | Tertiary            | Male Voice | US Male (Davis) | Cloned (e.g., `2.wav`) |
+| 3  | Quaternary          | Female Voice | UK Female (Sonia) | Cloned (e.g., `3.wav`) |
+| ...| Additional Voices   | N/A        | N/A      | Cloned (e.g., `X.wav`/`speaker_X.wav`) |
 
-*Note*: For Sesame CSM, male voices (0 and 2) both map to speaker 0, and female voices (1 and 3) both map to speaker 1, since Sesame only supports two distinct voices.
+*Note for Sesame CSM*: Speaker IDs 0 and 2 map to its male voice; IDs 1 and 3 map to its female voice.
+*Note for Zonos TTS*: Speaker IDs correspond to user-provided `.wav` files in the `tts_models/zonos_reference_audio/` directory (e.g., speaker ID `X` typically maps to `X.wav` or `speaker_X.wav`). The voice characteristics are determined by these reference files. The system can support many such cloned speakers.
 
 ## Selecting Models
 
@@ -151,40 +155,43 @@ Basic request format:
 
 #### Language Support (`lang` parameter)
 
-You can specify the language for the TTS generation using the `lang` parameter.
+Clients **should** specify the language for TTS generation using standard IETF language tags (e.g., `en-US`, `ja-JP`, `es-ES`) in the `lang` parameter of the WebSocket request.
 
-- **Default**: `en-US` (if not specified)
-- **Supported Languages**:
-  - `en-US`: Supported by both `edge` and `sesame` models.
-  - `ja-JP`: Supported only by the `edge` model.
-    - Speaker 0: `ja-JP-KeitaNeural`
-    - Speaker 1: `ja-JP-NanamiNeural`
-    - *Note*: Speaker IDs 2 and 3 are not currently mapped for `ja-JP`. Requesting them will fall back to speaker 0 (`KeitaNeural`).
+- **Default**: If the `lang` parameter is not provided, `en-US` is generally assumed by most models, though specific model behavior can vary.
+- **Server-Side Language Code Mapping**:
+  - The server-side TTS models (`edge`, `sesame`, `zonos`) are responsible for mapping these standard input language codes to the specific formats required by their underlying TTS engines. This mapping is handled by a `_map_language_code` method within each model.
+  - While models *may* attempt to normalize and map common variations (e.g., "en", "english" to "en-US"), relying on this is discouraged for client implementations.
+- **Error Handling**:
+  - If a model cannot map the provided `lang` parameter to a supported language code (even after its internal normalization attempts), the server will return an error, and speech generation will fail. This indicates the language is not supported by the chosen model.
+- **Model-Specific Support**:
+  - **EdgeTTS**: Accepts standard codes like "en-US", "ja-JP". See its `VOICE_MAPPINGS` for explicitly configured target languages.
+  - **SesameCSM**: Primarily supports "en-US". Requests for other language codes will result in an error.
+  - **ZonosTTS**: Accepts standard codes and maps them to its wide range of supported languages (e.g., "en-US" might map to "en-us", "ja-JP" to "ja"). It uses a comprehensive mapping (see `PREFERRED_ZONOS_LANG_MAP` in `zonos_tts.py`) and checks against dynamically available Zonos language codes.
+- **Client Recommendation**: For maximum compatibility and predictability, clients **must** send well-formed IETF language tags (e.g., `en-US`, `ja-JP`).
 
-**Example (Japanese):**
+**Example (Japanese with EdgeTTS):**
 
 ```json
 {
   "text": "こんにちは、これはテストです。",
-  "speaker": 1,          // Use NanamiNeural voice
+  "speaker": 1,
   "model": "edge",
-  "lang": "ja-JP"
+  "lang": "ja-JP" // Client sends standard ja-JP
 }
 ```
 
-#### Edge TTS Voice Selection
-
-When using Edge TTS, you can only specify which voice to use via the speaker ID. The Edge TTS implementation uses only default voice parameters - no customization of rate, volume or pitch is allowed:
+**Example (English with Zonos):**
 
 ```json
 {
-  "text": "Text to convert to speech",
-  "speaker": 0,
-  "model": "edge"
+  "text": "Hello, this is Zonos.",
+  "speaker": 0, 
+  "model": "zonos",
+  "lang": "en-US" // Client sends standard en-US; Zonos maps to "en-us" or similar
 }
 ```
 
-**Important Note:** For Edge TTS, voice modification parameters like `rate`, `volume`, and `pitch` are not supported and will be ignored. Edge TTS will always use the natural, default voice characteristics to ensure maximum reliability and consistent sound quality.
+**Important Note:** For Edge TTS, voice modification parameters like `rate`, `volume`, and `pitch` are not supported and will be ignored. Edge TTS will always use the default voice characteristics.
 
 ### Server Information Request
 
