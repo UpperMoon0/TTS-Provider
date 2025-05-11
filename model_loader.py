@@ -20,45 +20,41 @@ class ModelLoader:
     
     def get_model_path(self) -> str:
         """
-        Get or create the path to the model files. Downloads if not present.
+        Get the path to the model files from Hugging Face Hub.
+        Downloads to the HF cache if not present.
         
         Returns:
-            Path to the model directory
+            Path to the model directory in the HF cache.
         """
-        model_path = os.path.join(self.base_path, "csm-1b")
-        
-        # If model doesn't exist, download it
-        if not os.path.exists(model_path) or not os.listdir(model_path):
-            self.logger.info("Model not found locally, downloading...")
-            try:
-                # Updated parameters to remove deprecated ones
-                snapshot_download(
-                    repo_id="sesame/csm-1b",
-                    local_dir=model_path,
-                    token=os.getenv("HF_TOKEN"),  # Use HF_TOKEN environment variable
-                    force_download=True,  # Force download instead of using resume_download
-                    proxies=None,
-                    etag_timeout=100,
-                    local_files_only=False
-                )
-                self.logger.info(f"Model downloaded successfully to {model_path}")
-            except LocalTokenNotFoundError:
-                self.logger.warning("No Hugging Face token found. Attempting anonymous download...")
-                # Retry without token
-                snapshot_download(
-                    repo_id="sesame/csm-1b",
-                    local_dir=model_path,
-                    force_download=True,
-                    proxies=None,
-                    etag_timeout=100,
-                    local_files_only=False
-                )
-                self.logger.info(f"Model downloaded successfully to {model_path}")
-            except Exception as e:
-                self.logger.error(f"Error downloading model: {str(e)}")
-                raise RuntimeError(f"Failed to download model: {str(e)}")
-        
-        return model_path
+        self.logger.info("Attempting to load 'sesame/csm-1b' model from Hugging Face cache or download if not present...")
+        try:
+            # snapshot_download will use the HF cache by default if local_dir is not specified.
+            # It returns the path to the downloaded/cached snapshot.
+            cached_model_path = snapshot_download(
+                repo_id="sesame/csm-1b",
+                token=os.getenv("HF_TOKEN"),
+                force_download=False,  # Allow caching, do not force re-download
+                local_files_only=False, # Allow download if not in cache
+                proxies=None,
+                etag_timeout=100
+            )
+            self.logger.info(f"Model 'sesame/csm-1b' successfully located/downloaded to Hugging Face cache: {cached_model_path}")
+            return cached_model_path
+        except LocalTokenNotFoundError:
+            self.logger.warning("No Hugging Face token found for 'sesame/csm-1b'. Attempting anonymous download to cache...")
+            # Retry without token
+            cached_model_path = snapshot_download(
+                repo_id="sesame/csm-1b",
+                force_download=False, # Allow caching
+                local_files_only=False, # Allow download
+                proxies=None,
+                etag_timeout=100
+            )
+            self.logger.info(f"Model 'sesame/csm-1b' successfully located/downloaded to Hugging Face cache (anonymous): {cached_model_path}")
+            return cached_model_path
+        except Exception as e:
+            self.logger.error(f"Error resolving/downloading model 'sesame/csm-1b' from Hugging Face Hub: {str(e)}")
+            raise RuntimeError(f"Failed to resolve/download model 'sesame/csm-1b': {str(e)}")
     
     def setup_csm_imports(self):
         """
