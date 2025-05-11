@@ -1,11 +1,8 @@
 import io
-import os
 import pytest
-import asyncio
 import wave
-from typing import Dict
-from unittest.mock import MagicMock, AsyncMock
-import torch # For creating dummy tensors
+from unittest.mock import MagicMock
+import torch
 
 from tts_models.sesame_csm import SesameCSMModel
 

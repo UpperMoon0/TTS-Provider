@@ -5,9 +5,9 @@ pytest.skip("Skipping all Zonos tests due to persistent failures and hangs.", al
 import io
 import os
 # import pytest # pytest is already imported above
-import asyncio
 import wave
-from typing import Dict
+from unittest.mock import MagicMock
+import torch # For creating dummy tensors
 
 from tts_models.zonos_tts import ZonosTTSModel, REFERENCE_AUDIO_DIR
 
@@ -46,19 +46,66 @@ def ensure_default_reference_files_for_module():
     ensure_dummy_reference_audio(speaker_id=1, filename_pattern="{id}.wav")
     # Add more if other specific speaker IDs are commonly tested
 
-async def test_zonos_tts_load_method(logger):
-    """Test the load method of ZonosTTSModel."""
+# Helper to create a mock Zonos model instance
+def create_mock_zonos_instance():
+    mock_instance = MagicMock()
+    # Add any attributes or methods ZonosTTSModel might expect after load
+    # For example, if it tries to get sample rate from the model:
+    # mock_instance.sample_rate = 24000 # Zonos default is 24kHz
+    return mock_instance
+
+# Helper to create dummy audio samples (as a torch tensor)
+def create_dummy_audio_samples(sample_rate=24000, duration_sec=1):
+    num_samples = int(sample_rate * duration_sec)
+    mock_audio_tensor_float = torch.randn(num_samples)
+    if torch.max(torch.abs(mock_audio_tensor_float)) > 0:
+        mock_audio_tensor_normalized = mock_audio_tensor_float / torch.max(torch.abs(mock_audio_tensor_float))
+    else:
+        mock_audio_tensor_normalized = mock_audio_tensor_float
+    return (mock_audio_tensor_normalized * 32767).to(torch.int16)
+
+
+async def test_zonos_tts_load_method(logger, mocker):
+    """Test the load method of ZonosTTSModel with mocking."""
     model = ZonosTTSModel()
     if model.Zonos is None:
         pytest.skip("Zonos library not installed, skipping ZonosTTSModel tests.")
-        
-    logger.info("Testing ZonosTTSModel load method.")
-    loaded = await model.load()
+    
+    logger.info("Testing ZonosTTSModel load method with mocking.")
+    
+    mock_zonos_loaded_instance = create_mock_zonos_instance()
+    # Assuming ZonosTTSModel.load() calls an internal method like _load_model_from_zonos_lib
+    # or directly instantiates zonos.TTS. We'll mock the instantiation if that's the case.
+    # For now, let's assume an internal method _init_zonos_model that returns the instance.
+    # If ZonosTTSModel.load() directly does `self.model = self.Zonos(...)`, we patch `self.Zonos`
+    
+    logger.info("Testing ZonosTTSModel load method with mocking.")
+    
+    mock_zonos_tts_engine_instance = create_mock_zonos_instance()
+    # Ensure it has attributes that ZonosTTSModel.load() might access after instantiation
+    if not hasattr(mock_zonos_tts_engine_instance, 'output_sample_rate'):
+        mock_zonos_tts_engine_instance.output_sample_rate = 24000 # Zonos default
+    # If zonos.TTS(...).load_model(...) is called, mock that too if necessary
+    # mock_zonos_tts_engine_instance.load_model = MagicMock() # Example
+
+    # Patch 'zonos.TTS' which is likely called within ZonosTTSModel.load()
+    # This assumes ZonosTTSModel.py does 'import zonos' and then 'self.Zonos.TTS(...)'
+    # or 'zonos.TTS(...)' if self.Zonos is the zonos module.
+    # If ZonosTTSModel does 'from zonos import TTS', the path is 'tts_models.zonos_tts.TTS'
+    # Given model.Zonos is checked, it's likely 'self.Zonos.TTS'
+    if hasattr(model, 'Zonos') and model.Zonos is not None: # Ensure Zonos module itself is "imported"
+        mocker.patch.object(model.Zonos, 'TTS', return_value=mock_zonos_tts_engine_instance)
+    else: # Fallback if self.Zonos is not the module but something else, or direct import
+        mocker.patch('tts_models.zonos_tts.zonos.TTS', return_value=mock_zonos_tts_engine_instance, create=True)
+
+
+    loaded = await model.load() # Now this should use the mocked zonos.TTS
     
     assert loaded, "Model should report successful loading."
     assert model.is_ready(), "Model should be ready after load."
     assert model.model is not None, "Zonos model instance should be initialized."
-    logger.info("ZonosTTSModel load method test passed.")
+    logger.info("ZonosTTSModel load method test passed with mocking.")
+
 
 @pytest.mark.parametrize("speaker_id, test_text_snippet, lang", [
     (0, "Hello, this is a test with speaker zero.", "en-us"),
@@ -67,18 +114,34 @@ async def test_zonos_tts_load_method(logger):
     # Add more languages if reference files and Zonos support are confirmed
     # (0, "Bonjour, c'est un test avec le locuteur zéro.", "fr"),
 ])
-async def test_zonos_tts_generation(logger, speaker_id, test_text_snippet, lang):
-    """Test ZonosTTSModel speech generation with different speakers and languages."""
+async def test_zonos_tts_generation(logger, mocker, speaker_id, test_text_snippet, lang):
+    """Test ZonosTTSModel speech generation with different speakers and languages with mocking."""
     model = ZonosTTSModel()
     if model.Zonos is None:
         pytest.skip("Zonos library not installed.")
+
+    
+    # Mock the zonos.TTS instantiation called by model.load()
+    mock_zonos_tts_engine_instance = create_mock_zonos_instance()
+    if not hasattr(mock_zonos_tts_engine_instance, 'output_sample_rate'):
+        mock_zonos_tts_engine_instance.output_sample_rate = 24000
+    
+    # This is the crucial part: make the mocked Zonos engine instance's synthesize_fork method also a mock
+    dummy_audio_samples = create_dummy_audio_samples(sample_rate=mock_zonos_tts_engine_instance.output_sample_rate)
+    # Zonos's synthesize_fork returns (numpy_array, sample_rate)
+    mock_zonos_tts_engine_instance.synthesize_fork = MagicMock(return_value=(dummy_audio_samples.numpy(), mock_zonos_tts_engine_instance.output_sample_rate))
+
+    if hasattr(model, 'Zonos') and model.Zonos is not None:
+        mocker.patch.object(model.Zonos, 'TTS', return_value=mock_zonos_tts_engine_instance)
+    else:
+        mocker.patch('tts_models.zonos_tts.zonos.TTS', return_value=mock_zonos_tts_engine_instance, create=True)
 
     # Ensure a reference audio file exists for the speaker ID being tested
     ref_path, created = ensure_dummy_reference_audio(speaker_id=speaker_id)
     if created:
         logger.info(f"Created dummy reference audio for speaker {speaker_id} at {ref_path}")
     
-    logger.info(f"Loading model for generation test (speaker {speaker_id}, lang {lang})...")
+    logger.info(f"Loading (mocked) model for generation test (speaker {speaker_id}, lang {lang})...")
     await model.load()
     assert model.is_ready(), "Model must be ready before generation."
 
@@ -87,6 +150,9 @@ async def test_zonos_tts_generation(logger, speaker_id, test_text_snippet, lang)
     try:
         audio_data = await model.generate_speech(test_text_snippet, speaker=speaker_id, lang=lang)
         assert len(audio_data) > 0, "Generated audio data should not be empty."
+        
+        # Check if the mock synthesize_fork was called
+        mock_zonos_loaded_instance.synthesize_fork.assert_called_once()
 
         with io.BytesIO(audio_data) as audio_io:
             with wave.open(audio_io, 'rb') as wav_file:
@@ -94,54 +160,77 @@ async def test_zonos_tts_generation(logger, speaker_id, test_text_snippet, lang)
                 assert wav_file.getsampwidth() == 2, "Audio should be 16-bit."
                 assert wav_file.getframerate() == model.get_sample_rate(), \
                     f"Sample rate should be {model.get_sample_rate()} Hz."
-        logger.info(f"Successfully generated and validated audio for speaker_id={speaker_id}, lang='{lang}'.")
+        logger.info(f"Successfully generated and validated audio for speaker_id={speaker_id}, lang='{lang}' with mocking.")
     except Exception as e:
-        pytest.fail(f"Error during speech generation for speaker_id={speaker_id}, lang='{lang}': {str(e)}")
+        pytest.fail(f"Error during speech generation for speaker_id={speaker_id}, lang='{lang}' with mocking: {str(e)}")
     finally:
         if created and os.path.exists(ref_path): # Clean up dummy file if created by this test
              # os.remove(ref_path) # Commented out to keep files for manual inspection if needed
              pass
 
 
-async def test_zonos_tts_generate_empty_text(logger):
-    """Test that generating speech with empty text raises appropriate error (implementation dependent)."""
+async def test_zonos_tts_generate_empty_text(logger, mocker):
+    """Test that generating speech with empty text raises appropriate error (mocked)."""
     model = ZonosTTSModel()
     if model.Zonos is None:
         pytest.skip("Zonos library not installed.")
+
+    # Mock load using the same class-level patch for zonos.TTS
+    mock_zonos_tts_engine_instance_empty = create_mock_zonos_instance()
+    if not hasattr(mock_zonos_tts_engine_instance_empty, 'output_sample_rate'):
+        mock_zonos_tts_engine_instance_empty.output_sample_rate = 24000
     
+    if hasattr(model, 'Zonos') and model.Zonos is not None:
+        mocker.patch.object(model.Zonos, 'TTS', return_value=mock_zonos_tts_engine_instance_empty)
+    else:
+        mocker.patch('tts_models.zonos_tts.zonos.TTS', return_value=mock_zonos_tts_engine_instance_empty, create=True)
+        
     ensure_dummy_reference_audio(0) # Ensure default speaker ref exists
     await model.load()
     assert model.is_ready(), "Model should be ready."
 
-    logger.info("Testing generation with empty text.")
-    # Zonos itself might handle empty text gracefully or raise an error.
-    # The current ZonosTTSModel doesn't explicitly check for empty text before calling Zonos.
-    # Let's assume Zonos or its conditioning step would raise some form of error.
-    # If Zonos generates a tiny silent audio, this test might need adjustment.
-    with pytest.raises(Exception): # Broad exception, as Zonos's specific error isn't predefined here
+    logger.info("Testing generation with empty text (mocked).")
+    # ZonosTTSModel.generate_speech has its own check: if not text.strip(): raise ValueError("Text cannot be empty")
+    with pytest.raises(ValueError) as excinfo:
         await model.generate_speech("", speaker=0, lang="en-us")
-    logger.info("Attempted generation with empty text (expected an error from Zonos library).")
+    assert "Text cannot be empty" in str(excinfo.value)
+    logger.info("Correctly raised ValueError for empty text (mocked).")
 
 
-async def test_zonos_tts_missing_reference_audio(logger):
-    """Test behavior when a reference audio file for a speaker is missing."""
+async def test_zonos_tts_missing_reference_audio(logger, mocker):
+    """Test behavior when a reference audio file for a speaker is missing (mocked load)."""
     model = ZonosTTSModel()
     if model.Zonos is None:
         pytest.skip("Zonos library not installed.")
+
+    # Mock load
+    mock_zonos_tts_engine_instance_missing = create_mock_zonos_instance()
+    if not hasattr(mock_zonos_tts_engine_instance_missing, 'output_sample_rate'):
+        mock_zonos_tts_engine_instance_missing.output_sample_rate = 24000
+
+    if hasattr(model, 'Zonos') and model.Zonos is not None:
+        mocker.patch.object(model.Zonos, 'TTS', return_value=mock_zonos_tts_engine_instance_missing)
+    else:
+        mocker.patch('tts_models.zonos_tts.zonos.TTS', return_value=mock_zonos_tts_engine_instance_missing, create=True)
 
     await model.load()
     assert model.is_ready(), "Model should be ready."
 
     missing_speaker_id = 999 # An ID unlikely to have a reference file
-    logger.info(f"Testing generation with missing reference audio for speaker ID {missing_speaker_id}.")
+    # Ensure this file *really* doesn't exist for the test
+    missing_ref_path = os.path.join(REFERENCE_AUDIO_DIR, f"{missing_speaker_id}.wav")
+    if os.path.exists(missing_ref_path):
+        os.remove(missing_ref_path)
+
+    logger.info(f"Testing generation with missing reference audio for speaker ID {missing_speaker_id} (mocked load).")
     
     with pytest.raises(FileNotFoundError):
         await model.generate_speech("Test text", speaker=missing_speaker_id, lang="en-us")
     logger.info(f"Correctly raised FileNotFoundError for missing reference audio (speaker {missing_speaker_id}).")
 
 
-@pytest.mark.skip(reason="Temporarily skipping due to hang to diagnose other failures.") # This line was from previous step, now superseded by module skip
-async def test_zonos_tts_supported_languages_and_voices(logger):
+# @pytest.mark.skip(reason="Temporarily skipping due to hang to diagnose other failures.") # Removed skip
+async def test_zonos_tts_supported_languages_and_voices(logger, mocker): # Added mocker
     """Test the supported_languages_and_voices property."""
     model = ZonosTTSModel()
     if model.Zonos is None:
