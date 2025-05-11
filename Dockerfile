@@ -17,12 +17,14 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-dev \
-    python3.12-venv \
+    # python3.12-venv is removed as it's not used in the builder stage
     git \
     ffmpeg \
     espeak-ng && \
     # Install pip for Python 3.12
     python3.12 -m ensurepip --upgrade && \
+    # Remove software-properties-common after adding PPA
+    apt-get purge -y --auto-remove software-properties-common && \
     # Clean up apt cache
     rm -rf /var/lib/apt/lists/*
 
@@ -68,10 +70,12 @@ RUN apt-get update && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
     python3.12 \
-    python3.12-dev \
     ffmpeg \
-    espeak-ng \
-    build-essential && \
+    espeak-ng && \
+    # python3.12-dev and build-essential are removed as they are typically not needed in the final runtime image
+    # if all compilation is done in the builder stage.
+    # Remove software-properties-common after adding PPA
+    apt-get purge -y --auto-remove software-properties-common && \
     rm -rf /var/lib/apt/lists/*
 
 # Make python3.12 the default python3
