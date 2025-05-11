@@ -35,16 +35,16 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install PyTorch with CUDA support
 # Using --no-cache-dir here and for other pip installs to reduce layer size
-RUN pip install --no-cache-dir --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+RUN pip install --no-cache-dir --resume-retries 5 torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu121
 
 # Copy requirements.txt and install dependencies
-# This includes dev dependencies like pytest for this builder stage if needed for any build-time checks (though typically not run here)
 # Triton will be compiled here using nvcc from the devel image
 COPY requirements.txt .
-# Create a temporary requirements file without torch/torchaudio as they are already installed
-RUN grep -vE '^torch==|^torchaudio==' requirements.txt > /requirements_no_torch.txt
-RUN pip install --no-cache-dir --ignore-installed blinker -r /requirements_no_torch.txt
-RUN rm /requirements_no_torch.txt
+# Create a temporary requirements file without torch/torchaudio (already installed)
+# and without development dependencies (pytest, etc.) to reduce image size.
+RUN grep -vE '^torch==|^torchaudio==|^pytest==|^pytest-asyncio==|^pytest-cov==|^pytest-mock' requirements.txt > /requirements_no_torch_dev.txt
+RUN pip install --no-cache-dir --ignore-installed blinker -r /requirements_no_torch_dev.txt
+RUN rm /requirements_no_torch_dev.txt
 
 # Stage 2: Final Runtime Image
 # Use the -runtime image which is smaller
