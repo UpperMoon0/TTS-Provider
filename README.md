@@ -3,7 +3,6 @@
 A flexible WebSocket-based Text-to-Speech service that supports multiple TTS backends. Currently supports:
 
 - Microsoft Edge TTS (default)
-- Sesame CSM-1B
 - Zonos TTS
 
 ## Installation
@@ -14,21 +13,6 @@ A flexible WebSocket-based Text-to-Speech service that supports multiple TTS bac
    ```bash
    pip install -r requirements.txt
    ```
-
-### Installing Sesame CSM-1B Model
-
-To use the Sesame CSM-1B model, you'll need to:
-
-1. Login to Hugging Face (you need to accept the model terms):
-
-   ```bash
-   huggingface-cli login
-   ```
-
-2. Ensure access to models:
-   The model will be automatically downloaded from Hugging Face when first used, but you need to have accepted the terms on the [Sesame CSM-1B model page](https://huggingface.co/sesame/csm-1b).
-
-   Note: The model requires access to both `sesame/csm-1b` and `meta-llama/Llama-3.2-1B` on Hugging Face.
 
 ### Installing Zonos TTS Model
 
@@ -60,7 +44,7 @@ To use the Zonos TTS model, you'll need to:
 python -m run_server
 ```
 
-Note: All TTS models (Edge, Sesame CSM-1B, Zonos) are loaded lazily. The server initializes, but the actual model weights are loaded into memory only when the first request requiring that specific model is received, or if preloading is triggered. This approach minimizes startup time and initial memory footprint.
+Note: TTS models (Edge, Zonos) are loaded lazily. The server initializes, but the actual model weights are loaded into memory only when the first request requiring that specific model is received, or if preloading is triggered. This approach minimizes startup time and initial memory footprint.
 
 ## Running with Docker
 
@@ -81,10 +65,10 @@ You can also run the TTS Provider server using Docker.
     **Explanation of the command:**
     - `--rm`: Automatically remove the container when it exits.
     - `-itd`: Run in interactive, TTY, and detached (background) mode.
-    - `--gpus all`: (Optional) If you have NVIDIA GPUs and want to use them for models like Sesame CSM and Zonos, this flag enables GPU access. Remove if you don't have GPUs or don't need GPU support.
+    - `--gpus all`: (Optional) If you have NVIDIA GPUs and want to use them for models like Zonos, this flag enables GPU access. Remove if you don't have GPUs or don't need GPU support.
     - `--name TTS-Provider`: Assigns a name to the container for easier management.
     - `-p 9000:9000`: Maps port 9000 on your host to port 9000 in the container.
-    - `-e HF_TOKEN=<YOUR_HF_TOKEN>`: Sets the Hugging Face token as an environment variable. **Replace `<YOUR_HF_TOKEN>` with your actual Hugging Face token.** This is required if you plan to use models like Sesame CSM-1B or Zonos that need to be downloaded from Hugging Face.
+    - `-e HF_TOKEN=<YOUR_HF_TOKEN>`: Sets the Hugging Face token as an environment variable. **Replace `<YOUR_HF_TOKEN>` with your actual Hugging Face token.** This may be required if you plan to use models like Zonos that need to be downloaded from Hugging Face.
     - `nstut/tts-provider`: The name of the Docker image to run.
 
     The server will then be accessible at `ws://localhost:9000`.
@@ -129,7 +113,7 @@ docker run --rm -itd --gpus all --name TTS-Provider \
 
 Replace `/path/on/your/host/hf_cache` with an actual directory path on your computer.
 
-Using either of these methods will ensure that models downloaded by Hugging Face (for both Sesame CSM and Zonos) are cached persistently.
+Using either of these methods will ensure that models downloaded by Hugging Face (e.g., for Zonos) are cached persistently.
 
 ## Client Usage
 
@@ -157,13 +141,6 @@ async def main():
             output_path="output.wav"
         )
         
-        # Generate speech with specific model
-        await client.generate_speech(
-            text="Hello, this is Sesame CSM speaking.",
-            output_path="output_sesame.wav",
-            model="sesame"
-        )
-        
         # Generate speech with Edge TTS
         await client.generate_speech(
             text="Hello, this is Edge TTS speaking.",
@@ -180,29 +157,26 @@ asyncio.run(main())
 
 ## Speaker ID Mapping
 
-The TTS Provider supports a unified speaker ID system across different models. You can use the same integer speaker IDs (0-3) regardless of which model you're using.
+The TTS Provider supports a speaker ID system. For EdgeTTS, you can use integer speaker IDs (0-3). For Zonos, speaker IDs correspond to your reference audio files.
 
-- **Simple usage**: Just provide a speaker ID as an integer, and it will be automatically mapped to the appropriate voice based on the model being used.
-- **Cross-model consistency**: The same speaker IDs work with both Sesame CSM and Edge TTS models.
+- **Simple usage**: Just provide a speaker ID as an integer.
 
 ### Speaker ID Reference Table
 
-| ID | General Description | Sesame CSM | Edge TTS | Zonos TTS |
-|----|---------------------|------------|----------|-----------|
-| 0  | Primary/Default     | Male Voice | US Male (Guy) | Cloned (e.g., `0.wav`/`default_speaker.wav`) |
-| 1  | Secondary           | Female Voice | US Female (Jenny) | Cloned (e.g., `1.wav`) |
-| 2  | Tertiary            | Male Voice | US Male (Davis) | Cloned (e.g., `2.wav`) |
-| 3  | Quaternary          | Female Voice | UK Female (Sonia) | Cloned (e.g., `3.wav`) |
-| ...| Additional Voices   | N/A        | N/A      | Cloned (e.g., `X.wav`/`speaker_X.wav`) |
+| ID | General Description | Edge TTS | Zonos TTS |
+|----|---------------------|----------|-----------|
+| 0  | Primary/Default     | US Male (Guy) | Cloned (e.g., `0.wav`/`default_speaker.wav`) |
+| 1  | Secondary           | US Female (Jenny) | Cloned (e.g., `1.wav`) |
+| 2  | Tertiary            | US Male (Davis) | Cloned (e.g., `2.wav`) |
+| 3  | Quaternary          | UK Female (Sonia) | Cloned (e.g., `3.wav`) |
+| ...| Additional Voices   | N/A      | Cloned (e.g., `X.wav`/`speaker_X.wav`) |
 
-*Note for Sesame CSM*: Speaker IDs 0 and 2 map to its male voice; IDs 1 and 3 map to its female voice.
 *Note for Zonos TTS*: Speaker IDs correspond to user-provided `.wav` files in the `tts_models/zonos_reference_audio/` directory (e.g., speaker ID `X` typically maps to `X.wav` or `speaker_X.wav`). The voice characteristics are determined by these reference files. The system can support many such cloned speakers.
 
 ## Selecting Models
 
 Clients can select which model to use in each request by including a `model` parameter:
 
-- `sesame` (or `csm`) - Use Sesame CSM-1B model
 - `edge` (or `edge-tts`) - Use Microsoft Edge TTS
 - `zonos` - Use Zonos TTS model
 
@@ -217,7 +191,7 @@ Basic request format:
   "text": "Text to convert to speech",
   "speaker": 0,
   "sample_rate": 24000,
-  "model": "edge",  // Optional. Specifies model type (e.g., "edge", "sesame", "zonos"). Defaults to "edge" if not provided.
+  "model": "edge",  // Optional. Specifies model type (e.g., "edge", "zonos"). Defaults to "edge" if not provided.
   "lang": "en-US"   // Optional. Specifies language. Defaults to "en-US".
 }
 ```
@@ -234,7 +208,6 @@ Clients **should** specify the language for TTS generation using standard IETF l
   - If a model cannot map the provided `lang` parameter to a supported language code (even after its internal normalization attempts), the server will return an error, and speech generation will fail. This indicates the language is not supported by the chosen model.
 - **Model-Specific Support**:
   - **EdgeTTS**: Accepts standard codes like "en-US", "ja-JP". See its `VOICE_MAPPINGS` for explicitly configured target languages.
-  - **SesameCSM**: Primarily supports "en-US". Requests for other language codes will result in an error.
   - **ZonosTTS**: Accepts standard codes and maps them to its wide range of supported languages (e.g., "en-US" might map to "en-us", "ja-JP" to "ja"). It uses a comprehensive mapping (see `PREFERRED_ZONOS_LANG_MAP` in `zonos_tts.py`) and checks against dynamically available Zonos language codes.
 - **Client Recommendation**: For maximum compatibility and predictability, clients **must** send well-formed IETF language tags (e.g., `en-US`, `ja-JP`).
 

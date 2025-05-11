@@ -13,11 +13,11 @@ class TTSServer:
     # When using integer speaker IDs, this helps map them consistently
     # regardless of which model is used
     SPEAKER_MAPPING = {
-        # Generic mappings that work across models
-        0: {"description": "Default Male Voice", "sesame": 0, "edge": 0},   # Default Male (US Guy)
-        1: {"description": "Default Female Voice", "sesame": 1, "edge": 1}, # Default Female (US Jenny)
-        2: {"description": "Alternative Male Voice", "sesame": 0, "edge": 2},  # Alternative Male (US Davis)
-        3: {"description": "Alternative Female Voice", "sesame": 1, "edge": 4}, # Alternative Female (UK Sonia)
+        # Generic mappings that work across models - Zonos will use its own speaker IDs based on filenames
+        0: {"description": "Default Male Voice", "edge": 0},   # Default Male (US Guy)
+        1: {"description": "Default Female Voice", "edge": 1}, # Default Female (US Jenny)
+        2: {"description": "Alternative Male Voice", "edge": 2},  # Alternative Male (US Davis)
+        3: {"description": "Alternative Female Voice", "edge": 4}, # Alternative Female (UK Sonia)
     }
     
     def __init__(self, host="0.0.0.0", port=9000):
@@ -48,12 +48,15 @@ class TTSServer:
         mapping = self.SPEAKER_MAPPING[speaker_id]
         
         # Map to the appropriate model's speaker ID
-        if model_type.lower() in ["sesame", "csm"]:
-            return mapping.get("sesame", 0)
-        elif model_type.lower() in ["edge", "edge-tts"]:
+        # Sesame/CSM block removed
+        if model_type.lower() in ["edge", "edge-tts"]: # Adjusted from elif to if
             return mapping.get("edge", 0)
+        # For Zonos or other models not explicitly mapped here,
+        # the original speaker_id is typically used directly by the model.
+        # (e.g., Zonos maps integer IDs to its reference audio files like 0.wav, 1.wav)
         else:
-            # For unknown models, return the original ID
+            # For unknown or unmapped models (like Zonos), return the original ID
+            self.logger.debug(f"Speaker ID {speaker_id} for model '{model_type}' not in explicit mapping, using original ID.")
             return speaker_id
     
     def run(self):

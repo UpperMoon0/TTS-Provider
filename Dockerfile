@@ -39,8 +39,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 # Using --no-cache-dir here and for other pip installs to reduce layer size
 RUN pip install --no-cache-dir --resume-retries 5 torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu121
 
-# Copy requirements.txt and install dependencies
-# Triton will be compiled here using nvcc from the devel image
+# Copy requirements.txt and install remaining dependencies
+# Triton (if not commented out in requirements.txt) would be compiled here using nvcc from the devel image.
 COPY requirements.txt .
 # Create a temporary requirements file without torch/torchaudio (already installed)
 # and without development dependencies (pytest, etc.) to reduce image size.
@@ -72,9 +72,6 @@ RUN apt-get update && \
     python3.12 \
     ffmpeg \
     espeak-ng && \
-    # python3.12-dev and build-essential are removed as they are typically not needed in the final runtime image
-    # if all compilation is done in the builder stage.
-    # Remove software-properties-common after adding PPA
     apt-get purge -y --auto-remove software-properties-common && \
     rm -rf /var/lib/apt/lists/*
 

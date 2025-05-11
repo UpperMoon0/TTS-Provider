@@ -12,8 +12,6 @@ class TTSModelFactory:
     # Available model identifiers and their implementation classes
     # Note: We only define the class references here, instances are created on demand
     AVAILABLE_MODELS = {
-        "sesame": "SesameCSMModel",  # Store as string to avoid immediate import
-        "csm": "SesameCSMModel",      # Alias
         "edge": EdgeTTSModel,         # Edge TTS is lightweight, so we can import directly
         "edge-tts": EdgeTTSModel,     # Alias
         "zonos": "ZonosTTSModel",     # Add Zonos, store as string for on-demand import
@@ -35,18 +33,8 @@ class TTSModelFactory:
         # If the model class is stored as a string, it needs to be imported
         if isinstance(model_class, str):
             logger = logging.getLogger("TTSModelFactory")
-            if model_class == "SesameCSMModel":
-                try:
-                    logger.info("Importing SesameCSMModel on demand")
-                    from .sesame_csm import SesameCSMModel
-                    # Update the dictionary with the actual class for future lookups
-                    cls.AVAILABLE_MODELS["sesame"] = SesameCSMModel # type: ignore
-                    cls.AVAILABLE_MODELS["csm"] = SesameCSMModel # type: ignore
-                    return SesameCSMModel
-                except ImportError as e:
-                    logger.error(f"Failed to import SesameCSMModel: {e}")
-                    return None
-            elif model_class == "ZonosTTSModel":
+            # SesameCSMModel block removed
+            if model_class == "ZonosTTSModel": # Adjusted from elif to if
                 try:
                     logger.info("Importing ZonosTTSModel on demand")
                     from .zonos_tts import ZonosTTSModel
