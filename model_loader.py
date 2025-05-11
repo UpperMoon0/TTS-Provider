@@ -1,8 +1,5 @@
-import importlib
 import os
 import logging
-import sys
-from pathlib import Path
 from huggingface_hub import snapshot_download
 from huggingface_hub.utils import LocalTokenNotFoundError
 
@@ -71,7 +68,7 @@ class ModelLoader:
             # Assuming the import `from generator import load_csm_1b` works if the package is installed correctly.
             try:
                 # Attempt to import directly, assuming nstut-csm-fork is in PYTHONPATH via pip install
-                from generator import load_csm_1b 
+                from generator import load_csm_1b
                 
                 # Get model path
                 model_path = self.get_model_path()

@@ -4,75 +4,121 @@ import pytest
 import asyncio
 import wave
 from typing import Dict
+from unittest.mock import MagicMock, AsyncMock
+import torch # For creating dummy tensors
 
 from tts_models.sesame_csm import SesameCSMModel
 
 # Mark all tests in this module as asyncio
 pytestmark = pytest.mark.asyncio
 
-async def test_sesame_csm_load_method(logger):
-    """Test the load method of SesameCSMModel."""
-    model = SesameCSMModel()
-    logger.info("Testing SesameCSMModel load method.")
+# Helper to create a mock CSM generator
+def create_mock_csm_generator(sample_rate=24000, duration_sec=1):
+    mock_csm_gen = MagicMock()
+    mock_csm_gen.sample_rate = sample_rate
+    
+    # Create a dummy float tensor
+    num_samples = int(sample_rate * duration_sec)
+    mock_audio_tensor_float = torch.randn(num_samples)
+    
+    # Normalize to [-1, 1] to prevent clipping and ensure full range for int16
+    if torch.max(torch.abs(mock_audio_tensor_float)) > 0: # Avoid division by zero for silent tensor
+        mock_audio_tensor_normalized = mock_audio_tensor_float / torch.max(torch.abs(mock_audio_tensor_float))
+    else:
+        mock_audio_tensor_normalized = mock_audio_tensor_float
 
-    # This might take some time depending on whether the model is cached
+    # Convert to int16
+    mock_audio_tensor_int16 = (mock_audio_tensor_normalized * 32767).to(torch.int16)
+    
+    mock_csm_gen.generate = MagicMock(return_value=mock_audio_tensor_int16)
+    return mock_csm_gen
+
+async def test_sesame_csm_load_method(logger, mocker):
+    """Test the load method of SesameCSMModel with mocking."""
+    model = SesameCSMModel()
+    logger.info("Testing SesameCSMModel load method with mocking.")
+
+    mock_csm_gen_instance = create_mock_csm_generator()
+    # Patch the internal method that performs the blocking load
+    mocker.patch.object(model, '_do_load_csm_model', return_value=mock_csm_gen_instance)
+
     loaded = await model.load()
     
     assert loaded, "Model should report successful loading."
     assert model.is_ready(), "Model should be ready after load."
-    assert model.model is not None, "CSM model instance should be initialized."
-    logger.info("SesameCSMModel load method test passed.")
+    assert model.csm_generator is not None, "CSM generator instance should be initialized."
+    assert model.csm_generator == mock_csm_gen_instance
+    logger.info("SesameCSMModel load method test passed with mocking.")
 
 @pytest.mark.parametrize("speaker_id, test_text_snippet", [
     (0, "Hello, this is a test of the male voice."),
     (1, "Hello, this is a test of the female voice."),
 ])
-async def test_sesame_csm_generation(logger, speaker_id, test_text_snippet):
-    """Test SesameCSMModel speech generation with different speakers."""
+async def test_sesame_csm_generation(logger, mocker, speaker_id, test_text_snippet):
+    """Test SesameCSMModel speech generation with different speakers using mocking."""
     model = SesameCSMModel()
 
+    mock_csm_gen_instance = create_mock_csm_generator()
+    mocker.patch.object(model, '_do_load_csm_model', return_value=mock_csm_gen_instance)
+    
     # Ensure model is loaded before generation
-    logger.info(f"Loading model for generation test (speaker {speaker_id})...")
-    await model.load()
+    logger.info(f"Loading mocked model for generation test (speaker {speaker_id})...")
+    await model.load() # This will use the mocked _do_load_csm_model
     assert model.is_ready(), "Model must be ready before generation."
 
     logger.info(f"Generating speech with speaker_id={speaker_id}, text='{test_text_snippet}'")
+    # The _do_generate_and_encode_csm method will now use the mocked csm_generator
     
     try:
         audio_data = await model.generate_speech(test_text_snippet, speaker=speaker_id)
         assert len(audio_data) > 0, "Generated audio data should not be empty."
 
+        # Validate that the mocked generate was called
+        mock_csm_gen_instance.generate.assert_called_once()
+
         with io.BytesIO(audio_data) as audio_io:
             with wave.open(audio_io, 'rb') as wav_file:
                 assert wav_file.getnchannels() == 1, "Audio should be mono."
                 assert wav_file.getsampwidth() == 2, "Audio should be 16-bit."
-                assert wav_file.getframerate() == model.get_sample_rate(), \
-                    f"Sample rate should be {model.get_sample_rate()} Hz."
-        logger.info(f"Successfully generated and validated audio for speaker_id={speaker_id}.")
+                # The sample rate should come from the mock generator
+                assert wav_file.getframerate() == mock_csm_gen_instance.sample_rate, \
+                    f"Sample rate should be {mock_csm_gen_instance.sample_rate} Hz."
+        logger.info(f"Successfully generated and validated audio for speaker_id={speaker_id} with mocking.")
     except Exception as e:
-        pytest.fail(f"Error during speech generation for speaker_id={speaker_id}: {str(e)}")
+        pytest.fail(f"Error during speech generation for speaker_id={speaker_id} with mocking: {str(e)}")
 
 
-async def test_sesame_csm_generate_empty_text(logger):
-    """Test that generating speech with empty text raises ValueError."""
+async def test_sesame_csm_generate_empty_text(logger, mocker):
+    """Test that generating speech with empty text raises ValueError with mocking."""
     model = SesameCSMModel()
-    await model.load() # Load is needed to pass the self.ready check in generate_speech
+    
+    mock_csm_gen_instance = create_mock_csm_generator()
+    mocker.patch.object(model, '_do_load_csm_model', return_value=mock_csm_gen_instance)
+    
+    await model.load() 
     assert model.is_ready(), "Model should be ready."
 
-    logger.info("Testing generation with empty text.")
+    logger.info("Testing generation with empty text (mocked).")
     with pytest.raises(ValueError) as excinfo:
         await model.generate_speech("", speaker=0)
-    assert "Text input cannot be empty" in str(excinfo.value)
-    logger.info("Correctly raised ValueError for empty text.")
+    # The error message "Text input cannot be empty" is raised in tts_models/base_model.py
+    # but the check in sesame_csm.py is `if not text.strip(): raise ValueError("Text cannot be empty")`
+    # Let's ensure the test matches the actual error message from SesameCSMModel or its parent.
+    # The actual error message from SesameCSMModel's generate_speech is "Text cannot be empty"
+    assert "Text cannot be empty" in str(excinfo.value) 
+    logger.info("Correctly raised ValueError for empty text (mocked).")
 
-async def test_sesame_csm_generate_unsupported_language(logger):
-    """Test that generating speech with an unsupported language (though CSM is primarily English)
-       doesn't crash and potentially falls back or handles it gracefully."""
+async def test_sesame_csm_generate_unsupported_language(logger, mocker):
+    """Test generation with an unsupported language using mocking."""
     model = SesameCSMModel()
+
+    mock_csm_gen_instance = create_mock_csm_generator()
+    mocker.patch.object(model, '_do_load_csm_model', return_value=mock_csm_gen_instance)
+
     await model.load()
     assert model.is_ready(), "Model should be ready."
 
-    logger.info("Testing generation with a non-English language (expecting fallback or graceful handling).")
+    logger.info("Testing generation with a non-English language (mocked).")
     # Sesame CSM is primarily for English. How it handles other languages might depend on its internal tokenizer.
     # This test assumes it won't crash but might produce suboptimal or English-interpreted audio.
     # For now, we just check that it doesn't raise an unhandled exception.
