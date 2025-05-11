@@ -14,9 +14,9 @@ soundfile==0.13.1
 pytest==8.3.5
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
-pytest-mock # Added for mocker fixture
+pytest-mock 
 aiohttp>=3.10.5
 # replace with triton-windows if you are on Windows
 triton
 edge-tts>=6.1.10
-nstut-csm-fork @ git+https://github.com/UpperMoon0/nstut-csm-fork.git@main
+csm @ git+https://github.com/UpperMoon0/nstut-csm-fork.git@main
