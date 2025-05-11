@@ -19,4 +19,4 @@ aiohttp>=3.10.5
 # replace with triton-windows if you are on Windows
 triton
 edge-tts>=6.1.10
-csm @ git+https://github.com/UpperMoon0/nstut-csm-fork.git@main
+nstut_csm_fork @ git+https://github.com/UpperMoon0/nstut-csm-fork.git@main
