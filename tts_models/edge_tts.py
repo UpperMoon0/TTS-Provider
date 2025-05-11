@@ -69,7 +69,47 @@ class EdgeTTSModel(BaseTTSModel):
     def get_sample_rate(self) -> int:
         """Get the sample rate of the generated audio"""
         return self.sample_rate
-    
+
+    def _map_language_code(self, lang_code: str) -> str:
+        """
+        Maps a general language code to an EdgeTTS-specific language code.
+        EdgeTTS typically uses codes like "en-US", "ja-JP".
+        This implementation will normalize the input and check against known mappings.
+        """
+        if not lang_code:
+            self.logger.warning("Empty language code provided, defaulting to 'en-US'.")
+            return "en-US"
+
+        normalized_input = lang_code.replace('_', '-') # Basic normalization
+
+        # Check if the normalized input (or its variants) is a key in VOICE_MAPPINGS
+        # Exact match
+        if normalized_input in self.VOICE_MAPPINGS:
+            self.logger.info(f"Language code '{lang_code}' (normalized: '{normalized_input}') directly supported.")
+            return normalized_input
+        
+        # Case-insensitive match
+        for supported_lang in self.VOICE_MAPPINGS.keys():
+            if supported_lang.lower() == normalized_input.lower():
+                self.logger.info(f"Language code '{lang_code}' (normalized: '{normalized_input}') matched case-insensitively to '{supported_lang}'.")
+                return supported_lang
+        
+        # Check if just the language part (e.g., "en" from "en-AU") is supported
+        lang_part = normalized_input.split('-')[0].lower()
+        possible_matches = [sl for sl in self.VOICE_MAPPINGS.keys() if sl.lower().startswith(lang_part)]
+        if possible_matches:
+            # Prefer a more specific match if available (e.g., en-US over en-GB if input was "en")
+            # For now, just take the first one found that starts with the lang_part
+            chosen_match = possible_matches[0]
+            self.logger.warning(
+                f"Language code '{lang_code}' (normalized: '{normalized_input}') not directly supported. "
+                f"Falling back to first available match for base '{lang_part}': '{chosen_match}'."
+            )
+            return chosen_match
+
+        self.logger.error(f"Language code '{lang_code}' (normalized: '{normalized_input}') is not supported by EdgeTTSModel. Supported: {list(self.VOICE_MAPPINGS.keys())}")
+        raise ValueError(f"Unsupported language code for EdgeTTS: {lang_code}. Supported: {list(self.VOICE_MAPPINGS.keys())}")
+
     @property
     def model_name(self) -> str:
         """Get the name of the model"""
@@ -183,9 +223,16 @@ class EdgeTTSModel(BaseTTSModel):
             
             if sanitized_text != original_text:
                 self.logger.info(f"Text was sanitized for better compatibility")
+
+            # Map the input language code to a model-specific one
+            try:
+                mapped_lang = self._map_language_code(lang)
+            except ValueError as e:
+                self.logger.error(f"Language mapping failed: {e}")
+                raise # Re-raise the ValueError to be caught by the caller
                 
             # Get the appropriate voice based on language and speaker ID
-            voice = self._get_voice_for_speaker(lang, speaker)
+            voice = self._get_voice_for_speaker(mapped_lang, speaker)
             
             # Check if any rate, volume, or pitch parameters were passed
             if any(param in kwargs for param in ["rate", "volume", "pitch"]):
@@ -195,7 +242,7 @@ class EdgeTTSModel(BaseTTSModel):
             self.logger.info(f"Generating speech using Edge TTS:")
             self.logger.info(f" - Text length: {len(sanitized_text)} chars")
             self.logger.info(f" - Text preview: '{sanitized_text[:100]}...' (truncated)" if len(sanitized_text) > 100 else f" - Text: '{sanitized_text}'")
-            self.logger.info(f" - Language: {lang}")
+            self.logger.info(f" - Language (mapped): {mapped_lang} (Original input: {lang})")
             self.logger.info(f" - Selected Voice: {voice} (Original Speaker ID: {speaker})")
             self.logger.info(f" - Using default voice parameters only (SSML modifications not allowed)")
             

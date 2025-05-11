@@ -166,6 +166,24 @@ class BaseTTSModel(ABC):
         """
         pass
 
+    @abstractmethod
+    def _map_language_code(self, lang_code: str) -> str:
+        """
+        Maps a general language code to a model-specific language code.
+        This method should normalize the input and return the code expected
+        by the specific TTS engine.
+
+        Args:
+            lang_code: The input language code (e.g., "en", "en-US", "english").
+
+        Returns:
+            The model-specific language code.
+
+        Raises:
+            ValueError: If the language code is unsupported or cannot be mapped.
+        """
+        pass
+
     @property
     @abstractmethod
     def model_type(self) -> str:

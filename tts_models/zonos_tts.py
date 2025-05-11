@@ -1,7 +1,7 @@
 import logging
 import io
 import os
-from typing import Dict # Add Dict for type hinting
+from typing import Dict
 
 import torchaudio
 
@@ -109,7 +109,6 @@ class ZonosTTSModel(BaseTTSModel):
         super().__init__()
         self.model = None
         self.is_model_loaded = False
-        # Ensure the reference audio directory exists
         if not os.path.exists(REFERENCE_AUDIO_DIR):
             try:
                 os.makedirs(REFERENCE_AUDIO_DIR)
@@ -142,7 +141,6 @@ class ZonosTTSModel(BaseTTSModel):
         if self.is_model_loaded:
             return True
         
-        # Use run_task_with_keepalive if websocket is provided
         if websocket:
             return await self.run_task_with_keepalive(websocket, self._load_model_async())
         else:
@@ -171,7 +169,6 @@ class ZonosTTSModel(BaseTTSModel):
             self.logger.warning(f"Reference audio directory not found: {REFERENCE_AUDIO_DIR}")
             return {0: "Default Cloned (No reference file found)"}
 
-        # Check for default_speaker.wav for speaker 0
         default_speaker_path = os.path.join(REFERENCE_AUDIO_DIR, "default_speaker.wav")
         if os.path.exists(default_speaker_path):
             cloned_speakers[0] = "Cloned (default_speaker.wav)"
@@ -182,7 +179,6 @@ class ZonosTTSModel(BaseTTSModel):
             else:
                 cloned_speakers[0] = "Cloned (No reference for ID 0)"
         
-        # Scan for other numbered speaker files
         for i in range(1, 100):  # Scan for up to 100 numbered speakers
             speaker_file_path = os.path.join(REFERENCE_AUDIO_DIR, f"{i}.wav")
             speaker_file_path_alt = os.path.join(REFERENCE_AUDIO_DIR, f"speaker_{i}.wav")
@@ -192,7 +188,7 @@ class ZonosTTSModel(BaseTTSModel):
             elif os.path.exists(speaker_file_path_alt):
                  cloned_speakers[i] = f"Cloned (speaker_{i}.wav)"
         
-        if not cloned_speakers: # Fallback if directory is empty
+        if not cloned_speakers:
             cloned_speakers[0] = "Cloned (No reference files in directory)"
         return cloned_speakers
 
@@ -213,7 +209,7 @@ class ZonosTTSModel(BaseTTSModel):
         
         if not supported_language_codes: # Fallback if zonos library not fully loaded
             self.logger.warning("Zonos supported_language_codes not available. Reporting limited language support.")
-            return {"en-us": cloned_speaker_options} # Default to en-us
+            return {"en-us": cloned_speaker_options}
 
         for lang_code in supported_language_codes:
             langs_and_voices[lang_code.lower()] = cloned_speaker_options
@@ -235,7 +231,6 @@ class ZonosTTSModel(BaseTTSModel):
 
         normalized_input = lang_code.lower().replace('_', '-')
 
-        # 1. Check preferred explicit mappings
         if normalized_input in self.PREFERRED_ZONOS_LANG_MAP:
             mapped_code = self.PREFERRED_ZONOS_LANG_MAP[normalized_input]
             self.logger.info(
@@ -243,7 +238,6 @@ class ZonosTTSModel(BaseTTSModel):
             )
             return mapped_code
         
-        # Also check the base language part (e.g., "en" from "en-au") against preferred map
         lang_part_of_input = normalized_input.split('-')[0]
         if lang_part_of_input in self.PREFERRED_ZONOS_LANG_MAP:
             mapped_code = self.PREFERRED_ZONOS_LANG_MAP[lang_part_of_input]
@@ -252,7 +246,6 @@ class ZonosTTSModel(BaseTTSModel):
             )
             return mapped_code
 
-        # 2. If not in preferred map, use logic with Zonos's supported_language_codes
         self.logger.info(
             f"Input lang '{lang_code}' (normalized: '{normalized_input}') not in preferred map. "
             "Proceeding with Zonos supported_language_codes list."
@@ -265,17 +258,12 @@ class ZonosTTSModel(BaseTTSModel):
             )
             return normalized_input
 
-        # 2a. Direct match in supported_language_codes
         if normalized_input in supported_language_codes:
             self.logger.info(
                 f"Normalized input '{normalized_input}' directly found in Zonos supported_language_codes."
             )
             return normalized_input
 
-        # lang_part_of_input was already calculated above
-        
-        # 2b. Generic input (e.g., "en"), try to find specific variant in supported_language_codes
-        # This applies if normalized_input was generic (e.g. "fr") and not in preferred map.
         if lang_part_of_input == normalized_input:
             for slc in supported_language_codes:
                 if slc.startswith(lang_part_of_input + "-"):
@@ -284,15 +272,14 @@ class ZonosTTSModel(BaseTTSModel):
                         f"Zonos code in supported_language_codes: '{slc}'."
                     )
                     return slc
-            # If the generic part itself (e.g. "es") is in supported_language_codes
             if lang_part_of_input in supported_language_codes:
                 self.logger.info(
                     f"Generic lang '{lang_part_of_input}' (not in preferred map) directly found in Zonos supported_language_codes."
                 )
                 return lang_part_of_input
         
-        # 2c. Specific input (e.g., "en-au") not in preferred map and not directly in supported_language_codes.
-        #     Try to fall back to another variant of the same base language in supported_language_codes.
+        # Specific input (e.g., "en-au") not in preferred map and not directly in supported_language_codes.
+        # Try to fall back to another variant of the same base language in supported_language_codes.
         for slc in supported_language_codes:
             if slc.startswith(lang_part_of_input + "-"):
                 self.logger.warning(
@@ -301,7 +288,6 @@ class ZonosTTSModel(BaseTTSModel):
                 )
                 return slc
         
-        # Fallback: if the base language part itself (e.g. "es" from "es-mx") is in supported_language_codes
         if lang_part_of_input in supported_language_codes:
             self.logger.warning(
                 f"Lang '{normalized_input}' not mappable, falling back to base language part '{lang_part_of_input}' "
@@ -309,13 +295,13 @@ class ZonosTTSModel(BaseTTSModel):
             )
             return lang_part_of_input
 
-        # 3. No mapping found through any primary logic.
-        self.logger.warning(
-            f"Lang '{normalized_input}' (from input '{lang_code}') has no preferred mapping and is not found or mappable "
-            f"within Zonos supported_language_codes ({supported_language_codes[:10]}...). "
-            f"Attempting to use '{normalized_input}' directly with Zonos."
+        # Fallback: if all else fails, this language is not mappable.
+        error_msg = (
+            f"Language code '{lang_code}' (normalized to '{normalized_input}') could not be mapped to a Zonos-supported language. "
+            f"Checked preferred map and Zonos supported codes ({supported_language_codes[:10]}...)."
         )
-        return normalized_input
+        self.logger.error(error_msg)
+        raise ValueError(error_msg)
 
     async def _generate_speech_async(self, text: str, speaker: int = 0, lang: str = "en-US", **kwargs) -> bytes:
         if not self.is_ready():
@@ -327,7 +313,6 @@ class ZonosTTSModel(BaseTTSModel):
             raise RuntimeError("Zonos library not available.")
 
         try:
-            # Determine reference audio path based on speaker ID
             reference_audio_path = None
             possible_filenames = []
             if speaker == 0:
@@ -357,7 +342,7 @@ class ZonosTTSModel(BaseTTSModel):
             self.logger.info(f"Creating speaker embedding for speaker ID {speaker}...")
             speaker_embedding = await self._run_blocking_task(self.model.make_speaker_embedding, ref_wav, ref_sr)
             
-            mapped_lang = self._map_language_code(lang) # This now includes validation
+            mapped_lang = self._map_language_code(lang)
             self.logger.info(f"Preparing conditioning for lang '{mapped_lang}' (original: '{lang}')...")
             cond_dict = make_cond_dict(text=text, speaker=speaker_embedding, language=mapped_lang)
             conditioning = await self._run_blocking_task(self.model.prepare_conditioning, cond_dict)
@@ -377,11 +362,10 @@ class ZonosTTSModel(BaseTTSModel):
             # If it's stereo (e.g., shape [channels, samples]), take one channel: audio_tensor[0][0] or average
             # For simplicity, let's assume it's [samples] or [1, samples] after [0] index
             processed_audio_tensor = audio_tensor[0]
-            if processed_audio_tensor.ndim > 1 and processed_audio_tensor.shape[0] > 1: # if it's multi-channel
+            if processed_audio_tensor.ndim > 1 and processed_audio_tensor.shape[0] > 1:
                  self.logger.info(f"Decoded audio has multiple channels ({processed_audio_tensor.shape[0]}), taking the first one.")
-                 processed_audio_tensor = processed_audio_tensor[0, :] # Take first channel
+                 processed_audio_tensor = processed_audio_tensor[0, :]
             
-            # Ensure it's 2D (batch, samples) for torchaudio.save
             if processed_audio_tensor.ndim == 1:
                 processed_audio_tensor = processed_audio_tensor.unsqueeze(0)
 
@@ -396,7 +380,6 @@ class ZonosTTSModel(BaseTTSModel):
             raise  # Re-raise to be caught by server
         except Exception as e:
             self.logger.error(f"Error during Zonos speech generation: {e}", exc_info=True)
-            # Consider raising a more specific error or returning None/empty bytes
             raise RuntimeError(f"Zonos speech generation failed: {e}")
 
 

@@ -84,8 +84,26 @@ class SesameCSMModel(BaseTTSModel):
                 1: "Female voice"
             }
         }
-    
-    # This is the duplicated, simpler generate_speech method. It will be removed by this diff.
+
+    def _map_language_code(self, lang_code: str) -> str:
+        """
+        Maps a general language code to a SesameCSM-specific language code.
+        SesameCSM only supports "en-US".
+        """
+        if not lang_code:
+            self.logger.warning("Empty language code provided, SesameCSM requires 'en-US'.")
+            raise ValueError("Language code cannot be empty. SesameCSM supports 'en-US'.")
+
+        # Normalize common variations of English to "en-US"
+        normalized_input = lang_code.lower().replace('_', '-')
+        
+        # Check for common English variants that should map to en-US for this model
+        if normalized_input in ["en", "en-us", "english"]:
+            return "en-US"
+        
+        # If it's anything else, it's not supported
+        self.logger.error(f"Unsupported language code '{lang_code}' for SesameCSM. Only 'en-US' is supported.")
+        raise ValueError(f"SesameCSMModel only supports 'en-US', but received '{lang_code}'.")
 
     def _do_generate_and_encode_csm(self, text: str, speaker: int, text_length: int):
         """Synchronous part of generating and encoding speech for CSM."""
@@ -134,10 +152,16 @@ class SesameCSMModel(BaseTTSModel):
         async def _actual_generate():
             # max_audio_length_ms = kwargs.get("max_audio_length_ms", self.max_audio_length_ms) # Removed parameter
             
-            # Check language support
-            if lang != "en-US":
-                raise ValueError(f"Sesame CSM model only supports 'en-US' language, but received '{lang}'")
-                
+            # Map and validate language code
+            try:
+                mapped_lang = self._map_language_code(lang)
+                # For Sesame, mapped_lang will always be "en-US" if successful,
+                # so no need to pass it further if the model inherently only supports one.
+                # However, the call ensures validation.
+            except ValueError as e:
+                self.logger.error(f"Language mapping failed for SesameCSM: {e}")
+                raise # Re-raise the ValueError
+
             if not text.strip():
                 raise ValueError("Text cannot be empty")
             
