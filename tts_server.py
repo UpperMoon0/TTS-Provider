@@ -48,7 +48,6 @@ class TTSServer:
         mapping = self.SPEAKER_MAPPING[speaker_id]
         
         # Map to the appropriate model's speaker ID
-        # Sesame/CSM block removed
         if model_type.lower() in ["edge", "edge-tts"]: # Adjusted from elif to if
             return mapping.get("edge", 0)
         # For Zonos or other models not explicitly mapped here,

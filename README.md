@@ -202,7 +202,7 @@ Clients **should** specify the language for TTS generation using standard IETF l
 
 - **Default**: If the `lang` parameter is not provided, `en-US` is generally assumed by most models, though specific model behavior can vary.
 - **Server-Side Language Code Mapping**:
-  - The server-side TTS models (`edge`, `sesame`, `zonos`) are responsible for mapping these standard input language codes to the specific formats required by their underlying TTS engines. This mapping is handled by a `_map_language_code` method within each model.
+  - The server-side TTS models (`edge`, `zonos`) are responsible for mapping these standard input language codes to the specific formats required by their underlying TTS engines. This mapping is handled by a `_map_language_code` method within each model.
   - While models *may* attempt to normalize and map common variations (e.g., "en", "english" to "en-US"), relying on this is discouraged for client implementations.
 - **Error Handling**:
   - If a model cannot map the provided `lang` parameter to a supported language code (even after its internal normalization attempts), the server will return an error, and speech generation will fail. This indicates the language is not supported by the chosen model.

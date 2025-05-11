@@ -246,7 +246,6 @@ async def test_error_handling(tts_server, logger):
 # Define expected sample rates for each model
 MODEL_EXPECTED_SAMPLE_RATES = {
     "edge": 24000,
-    "sesame_csm": 24000, # Assuming SesameCSM model's sample rate is 24000
     # "zonos": 44100      # Zonos model's sample rate (Commented out as Zonos tests are skipped)
 }
 

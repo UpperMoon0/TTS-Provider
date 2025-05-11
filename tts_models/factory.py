@@ -33,8 +33,7 @@ class TTSModelFactory:
         # If the model class is stored as a string, it needs to be imported
         if isinstance(model_class, str):
             logger = logging.getLogger("TTSModelFactory")
-            # SesameCSMModel block removed
-            if model_class == "ZonosTTSModel": # Adjusted from elif to if
+            if model_class == "ZonosTTSModel":
                 try:
                     logger.info("Importing ZonosTTSModel on demand")
                     from .zonos_tts import ZonosTTSModel

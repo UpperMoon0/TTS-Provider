@@ -34,7 +34,7 @@ class TTSGenerator:
         if self.model_name.lower() in ["edge", "edge-tts"]:
             self._initialize_model(self.model_name)
         else:
-            # For Sesame/other models, just store the name but don't initialize
+            # For other models, just store the name but don't initialize
             self.model = None
             self.sample_rate = 24000  # Default sample rate
     
