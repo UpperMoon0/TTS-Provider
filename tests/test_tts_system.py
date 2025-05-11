@@ -241,3 +241,116 @@ async def test_error_handling(tts_server, logger):
     finally:
         # Restore the original method
         server.generator.generate_speech = original_method
+
+
+# Define expected sample rates for each model
+MODEL_EXPECTED_SAMPLE_RATES = {
+    "edge": 24000,
+    "sesame_csm": 24000, # Assuming SesameCSM model's sample rate is 24000
+    # "zonos": 44100      # Zonos model's sample rate (Commented out as Zonos tests are skipped)
+}
+
+@pytest.mark.integration # Mark as integration test
+@pytest.mark.parametrize("model_name", ["edge"]) # Removed "zonos"
+@pytest.mark.asyncio
+async def test_tts_generation_with_real_models(real_tts_server, logger, model_name):
+    """Test TTS generation with different real models through WebSocket."""
+    server_info = await anext(real_tts_server)
+    port = server_info["port"]
+    
+    # Skip Zonos if library not installed (checked by ZonosTTSModel itself)
+    if model_name == "zonos":
+        try:
+            from tts_models.zonos_tts import ZonosTTSModel
+            if ZonosTTSModel.Zonos is None: # Accessing the class attribute
+                pytest.skip("Zonos library not installed, skipping Zonos system test.")
+        except ImportError:
+            pytest.skip("ZonosTTSModel could not be imported, skipping Zonos system test.")
+        # Ensure a dummy reference file for speaker 0 for Zonos
+        # This should ideally be handled by a fixture if tests become more complex
+        from tests.test_zonos_tts import ensure_dummy_reference_audio
+        ensure_dummy_reference_audio(speaker_id=0, filename_pattern="0.wav")
+
+
+    uri = f"ws://localhost:{port}"
+    logger.info(f"Testing TTS generation with real model '{model_name}' at {uri}...")
+    
+    max_retries = 2 # Reduced retries for potentially long-loading models
+    retry_delay = 2
+    
+    request_text = f"This is a test for the {model_name} model."
+    expected_sample_rate = MODEL_EXPECTED_SAMPLE_RATES.get(model_name, TEST_SAMPLE_RATE)
+
+    for attempt in range(max_retries):
+        try:
+            async with websockets.connect(
+                uri,
+                max_size=20*1024*1024, # Increased max_size for potentially larger audio
+                ping_interval=None,
+                open_timeout=10 # Increased open timeout
+            ) as websocket:
+                request = {
+                    "text": request_text,
+                    "speaker": 0,
+                    "model": model_name, # Specify the model to use
+                    # "sample_rate": expected_sample_rate # Client might not need to specify if server handles it
+                }
+                
+                logger.info(f"Sending request for model '{model_name}': {json.dumps(request)}")
+                await websocket.send(json.dumps(request))
+                
+                # Receive metadata response - use longer timeout for real models
+                # Max wait time: 10s for metadata + 180s for loading + 60s for generation = 250s
+                
+                metadata_str = await asyncio.wait_for(websocket.recv(), timeout=30) # Initial metadata or loading status
+                metadata = json.loads(metadata_str)
+                logger.info(f"Received initial metadata/status for '{model_name}': {metadata}")
+
+                loading_timeout = 180 # Max 3 minutes for model loading
+                if metadata.get("status") == "loading":
+                    logger.info(f"Model '{model_name}' is loading, waiting up to {loading_timeout}s...")
+                    # Wait for the next message, which should be the actual metadata after loading
+                    metadata_str = await asyncio.wait_for(websocket.recv(), timeout=loading_timeout)
+                    metadata = json.loads(metadata_str)
+                    logger.info(f"Received final metadata for '{model_name}' after loading: {metadata}")
+                
+                assert metadata.get("status") == "success", f"Expected status 'success' for {model_name}, got {metadata.get('status')}"
+                assert "length_bytes" in metadata, f"Missing 'length_bytes' in metadata for {model_name}"
+                assert "sample_rate" in metadata, f"Missing 'sample_rate' in metadata for {model_name}"
+                assert metadata["format"] == "wav", f"Expected format 'wav' for {model_name}"
+                assert metadata["sample_rate"] == expected_sample_rate, \
+                    f"For {model_name}, expected sample rate {expected_sample_rate}, got {metadata['sample_rate']}"
+                
+                # Receive audio data - use longer timeout
+                audio_data = await asyncio.wait_for(websocket.recv(), timeout=120) # Increased timeout for generation
+                
+                assert len(audio_data) == metadata["length_bytes"], \
+                    f"Audio data length mismatch for {model_name}"
+                
+                with io.BytesIO(audio_data) as audio_io:
+                    with wave.open(audio_io, 'rb') as wav_file:
+                        assert wav_file.getnchannels() == 1
+                        assert wav_file.getsampwidth() == 2
+                        assert wav_file.getframerate() == expected_sample_rate
+                        logger.info(f"Valid WAV file generated for model '{model_name}': {wav_file.getnframes()} frames")
+                
+                logger.info(f"TTS generation test passed for model '{model_name}'.")
+                return # Test successful for this model
+        
+        except websockets.exceptions.ConnectionClosedError as cce:
+            logger.error(f"Connection closed during test for '{model_name}' (Attempt {attempt+1}): {cce}")
+            if attempt < max_retries - 1: await asyncio.sleep(retry_delay)
+            else: pytest.fail(f"ConnectionClosedError for {model_name} after {max_retries} attempts: {cce}")
+        except asyncio.TimeoutError as te:
+            logger.error(f"Timeout during test for '{model_name}' (Attempt {attempt+1}): {te}")
+            if attempt < max_retries - 1: await asyncio.sleep(retry_delay)
+            else: pytest.fail(f"TimeoutError for {model_name} after {max_retries} attempts: {te}")
+        except Exception as e:
+            logger.error(f"Error during TTS generation test for model '{model_name}' (Attempt {attempt+1}): {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+            else:
+                pytest.fail(f"TTS generation test failed for model '{model_name}' after {max_retries} attempts: {e}")
+    
+    # If loop completes without returning, it means all retries failed for the current model_name
+    pytest.fail(f"All attempts failed for TTS generation with model '{model_name}'.")

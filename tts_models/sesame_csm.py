@@ -90,20 +90,20 @@ class SesameCSMModel(BaseTTSModel):
         Maps a general language code to a SesameCSM-specific language code.
         SesameCSM only supports "en-US".
         """
+        # SesameCSM is primarily English-focused. Map all inputs to "en-US".
+        # Log a warning if the input is not a recognized English variant.
         if not lang_code:
-            self.logger.warning("Empty language code provided, SesameCSM requires 'en-US'.")
-            raise ValueError("Language code cannot be empty. SesameCSM supports 'en-US'.")
-
-        # Normalize common variations of English to "en-US"
-        normalized_input = lang_code.lower().replace('_', '-')
-        
-        # Check for common English variants that should map to en-US for this model
-        if normalized_input in ["en", "en-us", "english"]:
+            self.logger.warning("Empty language code provided, defaulting to 'en-US' for SesameCSM.")
             return "en-US"
-        
-        # If it's anything else, it's not supported
-        self.logger.error(f"Unsupported language code '{lang_code}' for SesameCSM. Only 'en-US' is supported.")
-        raise ValueError(f"SesameCSMModel only supports 'en-US', but received '{lang_code}'.")
+
+        normalized_input = str(lang_code).lower().replace('_', '-')
+
+        if normalized_input not in ["en", "en-us", "english"]:
+            self.logger.warning(
+                f"Language code '{lang_code}' (normalized: {normalized_input}) is not a standard English variant. "
+                "Defaulting to 'en-US' for SesameCSM."
+            )
+        return "en-US"
 
     def _do_generate_and_encode_csm(self, text: str, speaker: int, text_length: int):
         """Synchronous part of generating and encoding speech for CSM."""

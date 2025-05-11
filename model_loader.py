@@ -16,7 +16,7 @@ class ModelLoader:
         self.logger = logger or logging.getLogger("ModelLoader")
         self.base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
         os.makedirs(self.base_path, exist_ok=True)
-        self.csm_generator = None
+        # self.csm_generator = None # This attribute doesn't seem to be used.
     
     def get_model_path(self) -> str:
         """
@@ -56,52 +56,7 @@ class ModelLoader:
             self.logger.error(f"Error resolving/downloading model 'sesame/csm-1b' from Hugging Face Hub: {str(e)}")
             raise RuntimeError(f"Failed to resolve/download model 'sesame/csm-1b': {str(e)}")
     
-    def setup_csm_imports(self):
-        """
-        Setup the Python path to properly import from Sesame-CSM-1b-Impl
-        
-        Returns:
-            bool: True if setup was successful, False otherwise
-        """
-        try:
-            # Create a simple package structure mapping
-            # This makes Python think 'csm' is a real module that points to our implementation
-            csm_impl_path = Path(__file__).parent / "nstut-csm-fork"
-            if not csm_impl_path.exists():
-                self.logger.error(f"CSM implementation not found at {csm_impl_path}")
-                return False
-            
-            self.logger.info(f"Setting up imports for CSM implementation at {csm_impl_path}")
-            
-            # Add the implementation directory to Python path
-            sys.path.insert(0, str(csm_impl_path))
-            
-            # Create csm namespace package if it doesn't exist
-            if 'csm' not in sys.modules:
-                # Create an empty module object for csm
-                csm_module = type('module', (), {})
-                csm_module.__path__ = []
-                sys.modules['csm'] = csm_module
-            
-            # Create csm.models that points to our models.py
-            models_module = importlib.import_module('models')
-            sys.modules['csm.models'] = models_module
-            
-            # Create csm.watermarking that points to our watermarking.py
-            watermarking_module = importlib.import_module('watermarking')
-            sys.modules['csm.watermarking'] = watermarking_module
-            
-            # Add modules to the csm module
-            sys.modules['csm'].models = models_module
-            sys.modules['csm'].watermarking = watermarking_module
-            
-            self.logger.info("CSM import setup successful")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to setup CSM imports: {str(e)}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-            return False
+    # Removed setup_csm_imports as nstut-csm-fork is now a pip library
     
     def load_csm_model(self):
         """
@@ -111,13 +66,12 @@ class ModelLoader:
             Loaded CSM generator model instance or None if loading failed
         """
         try:
-            # First, set up the import system for CSM modules
-            if not self.setup_csm_imports():
-                return None
-            
-            # Now we can properly import from the generator module
+            # nstut-csm-fork is now a pip library, so direct import should work.
+            # The package structure might be `nstut_csm_fork.generator` or similar.
+            # Assuming the import `from generator import load_csm_1b` works if the package is installed correctly.
             try:
-                from generator import load_csm_1b
+                # Attempt to import directly, assuming nstut-csm-fork is in PYTHONPATH via pip install
+                from generator import load_csm_1b 
                 
                 # Get model path
                 model_path = self.get_model_path()
@@ -136,11 +90,11 @@ class ModelLoader:
                 return generator
                 
             except ImportError as e:
-                self.logger.error(f"Failed to import from Sesame-CSM-1b-Impl: {str(e)}")
+                self.logger.error(f"Failed to import 'load_csm_1b' from 'generator' (nstut-csm-fork library): {str(e)}")
                 return None
                 
         except Exception as e:
-            self.logger.error(f"Failed to load CSM-1B model: {str(e)}")
+            self.logger.error(f"Failed to load CSM-1B model (nstut-csm-fork library): {str(e)}")
             import traceback
             self.logger.error(traceback.format_exc())
             return None
