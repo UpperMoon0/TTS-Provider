@@ -9,24 +9,31 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV VENV_PATH=/opt/venv
 
 # Install Python 3.12, pip, git, and other system dependencies
+# Install prerequisites for adding PPA and other tools
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    software-properties-common && \
+    ca-certificates \
+    gnupg \
+    software-properties-common \
+    wget && \
+    # Add deadsnakes PPA
     add-apt-repository -y ppa:deadsnakes/ppa && \
+    # Update package list again after adding PPA
     apt-get update && \
+    # Install Python 3.12 and other dependencies
     apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-dev \
-    python3.12-distutils \
-    # python3.12-venv is removed as it's not used in the builder stage
     git \
     ffmpeg \
     espeak-ng && \
-    # Install pip for Python 3.12
-    python3.12 -m ensurepip --upgrade && \
-    # Remove software-properties-common after adding PPA
-    apt-get purge -y --auto-remove software-properties-common && \
-    # Clean up apt cache
+    # Install pip for Python 3.12 using get-pip.py
+    wget https://bootstrap.pypa.io/get-pip.py && \
+    python3.12 get-pip.py && \
+    rm get-pip.py && \
+    # Clean up unnecessary packages and apt cache
+    apt-get purge -y --auto-remove software-properties-common gnupg wget && \
+    apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
 # Make python3.12 the default python3 and pip
@@ -36,11 +43,11 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 # Upgrade pip, setuptools, wheel
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install PyTorch with CUDA support
-# Using --no-cache-dir here and for other pip installs to reduce layer size
-RUN pip install --no-cache-dir --resume-retries 5 torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu121
-
-# Copy requirements.txt and install remaining dependencies
+    # Install PyTorch with CUDA support
+    # Using --no-cache-dir here and for other pip installs to reduce layer size
+    RUN pip install --no-cache-dir --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+    
+    # Copy requirements.txt and install remaining dependencies
 # Triton (if not commented out in requirements.txt) would be compiled here using nvcc from the devel image.
 COPY requirements.txt .
 # Create a temporary requirements file without torch/torchaudio (already installed)
