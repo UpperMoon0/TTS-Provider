@@ -41,14 +41,14 @@ To use the Zonos TTS model, you'll need to:
 
 ```bash
 # Default command (uses Edge TTS by default if no model is specified in the request)
-python -m run_server
+python -m main
 ```
 
 Note: TTS models (Edge, Zonos) are loaded lazily. The server initializes, but the actual model weights are loaded into memory only when the first request requiring that specific model is received, or if preloading is triggered. This approach minimizes startup time and initial memory footprint.
 
 ## Running with Docker
 
-You can also run the TTS Provider server using Docker.
+You can also run the TTS Provider server using Docker. The Docker image has been optimized to reduce size while maintaining all functionality.
 
 1. **Pull the Docker Image:**
 
@@ -114,6 +114,16 @@ docker run --rm -itd --gpus all --name TTS-Provider \
 Replace `/path/on/your/host/hf_cache` with an actual directory path on your computer.
 
 Using either of these methods will ensure that models downloaded by Hugging Face (e.g., for Zonos) are cached persistently.
+
+## Docker Image Optimization
+
+The Docker image has been optimized to reduce size while maintaining all functionality:
+
+- Production dependencies separated from development dependencies
+- Layer optimization for better caching
+- Maintained GPU support for Zonos TTS
+
+See [DOCKER_OPTIMIZATION.md](DOCKER_OPTIMIZATION.md) for details on the optimizations made.
 
 ## Client Usage
 

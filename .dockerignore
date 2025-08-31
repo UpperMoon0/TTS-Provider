@@ -42,7 +42,8 @@ tests/
 
 # Runtime generated files/models (handled inside container)
 outputs/
-models/
+# Exclude only runtime-generated models, not source code models
+# models/  # Commented out to include source code models directory
 generated_files/
 *.log
 

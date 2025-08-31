@@ -1,12 +1,10 @@
 # Stage 1: Builder
-# Use the -devel image which includes CUDA compiler (nvcc) for dependencies like Triton
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS builder
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV HF_HUB_DISABLE_SYMLINKS_WARNING=True
 ENV DEBIAN_FRONTEND=noninteractive
-ENV VENV_PATH=/opt/venv
 
 # Install Python 3.12, pip, git, and other system dependencies
 # Install prerequisites for adding PPA and other tools
@@ -43,18 +41,14 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 # Upgrade pip, setuptools, wheel
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-    # Install PyTorch with CUDA support
-    # Using --no-cache-dir here and for other pip installs to reduce layer size
-    RUN pip install --no-cache-dir --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-    
-    # Copy requirements.txt and install remaining dependencies
-# Triton (if not commented out in requirements.txt) would be compiled here using nvcc from the devel image.
-COPY requirements.txt .
-# Create a temporary requirements file without torch/torchaudio (already installed)
-# and without development dependencies (pytest, etc.) to reduce image size.
-RUN grep -vE '^torch==|^torchaudio==|^pytest==|^pytest-asyncio==|^pytest-cov==|^pytest-mock' requirements.txt > /requirements_no_torch_dev.txt
-RUN pip install --no-cache-dir --ignore-installed blinker -r /requirements_no_torch_dev.txt
-RUN rm /requirements_no_torch_dev.txt
+# Install PyTorch with CUDA support
+# Using --no-cache-dir here and for other pip installs to reduce layer size
+RUN pip install --no-cache-dir --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+
+# Copy requirements-prod.txt and install remaining dependencies
+# This excludes test dependencies to reduce image size
+COPY requirements-prod.txt .
+RUN pip install --no-cache-dir --ignore-installed blinker -r requirements-prod.txt
 
 # Stage 2: Final Runtime Image
 # Use the -runtime image which is smaller
@@ -70,6 +64,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV DEBIAN_FRONTEND=noninteractive
 # Define Hugging Face cache directory
 ENV HF_HOME=/app/huggingface_cache
+# Add current directory to Python path
+ENV PYTHONPATH="/app:${PYTHONPATH}"
 
 # Install Python 3.12 runtime and essential system dependencies
 RUN apt-get update && \
