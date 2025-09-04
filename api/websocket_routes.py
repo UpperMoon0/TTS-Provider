@@ -204,11 +204,14 @@ class WebSocketRoutes:
                     "message": "Invalid request format: expected JSON"
                 }))
                 
-        except websockets.exceptions.ConnectionClosedOK:
-            self.logger.info("Client disconnected")
         except Exception as e:
-            self.logger.error(f"Error handling client: {str(e)}")
-            self.logger.debug(traceback.format_exc())
+            # This is a generic catch-all. Specific exceptions should be handled before this.
+            # For example, ConnectionClosedOK is a common exception that should be handled gracefully.
+            if isinstance(e, websockets.exceptions.ConnectionClosedOK):
+                self.logger.info("Client disconnected gracefully.")
+            else:
+                self.logger.error(f"An unexpected error occurred in handle_client: {str(e)}")
+                self.logger.debug(traceback.format_exc())
     
     async def process_request(self, websocket, request):
         """Process a TTS request once the model is ready"""
@@ -304,6 +307,10 @@ class WebSocketRoutes:
                 # Add a delay before potentially closing the connection
                 await asyncio.sleep(0.5)
                 
+                # Explicitly close the connection to ensure proper closure
+                await websocket.close()
+                self.logger.info("WebSocket connection closed after sending audio data")
+                
             except Exception as e:
                 error_msg = str(e)
                 self.logger.error(f"Error generating audio: {error_msg}")
@@ -311,6 +318,9 @@ class WebSocketRoutes:
                     "status": "error",
                     "message": f"Failed to generate speech: {error_msg}"
                 }))
+                # Close the connection even in case of error
+                await websocket.close()
+                self.logger.info("WebSocket connection closed after error")
                 
         except Exception as e:
             self.logger.error(f"Error processing request: {str(e)}")
