@@ -36,19 +36,20 @@ RUN apt-get update && \
 
 # Make python3.12 the default python3 and pip
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
-    python3 -m pip install --no-cache-dir --upgrade pip
+    python3 -m pip install --upgrade pip
 
 # Upgrade pip, setuptools, wheel
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --upgrade pip setuptools wheel
 
 # Install PyTorch with CUDA support
-# Using --no-cache-dir here and for other pip installs to reduce layer size
-RUN pip install --no-cache-dir --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 
 # Copy requirements-prod.txt and install remaining dependencies
 # This excludes test dependencies to reduce image size
 COPY requirements-prod.txt .
-RUN pip install --no-cache-dir --ignore-installed blinker -r requirements-prod.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --ignore-installed blinker -r requirements-prod.txt
 
 # Stage 2: Final Runtime Image
 # Use the -runtime image which is smaller
