@@ -14,6 +14,7 @@ from core.config import Config
 from services.tts_service import TTSService
 from api.websocket_routes import WebSocketRoutes
 from http_server import start_http_server
+from utils.service_discovery import ServiceDiscovery
 
 def setup_logging():
     """Set up logging for the server"""
@@ -62,14 +63,30 @@ def main():
     )
     http_thread.start()
     
+    # Register with Consul
+    # We register the HTTP service because that's what MCP/Rest uses.
+    # We can rely on http_port.
+    # Note: TTS Provider has a separate WS port, but usually discovery is for the HTTP API mainly or we register both.
+    # For now, let's register the main HTTP endpoint.
+    sd = ServiceDiscovery(
+        service_name="tts-provider", 
+        port=http_port,
+        tags=["mcp"] # Assuming TTS might expose MCP later or we just tag it generally
+    )
+    sd.start()
+    
     # Start WebSocket server
     logger.info("Starting WebSocket server...")
     websocket_server = WebSocketRoutes(tts_service, host=args.host, port=args.port)
     
     logger.info("Lazy loading enabled - models will be loaded on first request")
     
-    # Run the WebSocket server
-    websocket_server.run()
+    try:
+        # Run the WebSocket server
+        websocket_server.run()
+    finally:
+        # Deregister on exit
+        sd.deregister()
 
 if __name__ == "__main__":
     main()
