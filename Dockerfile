@@ -1,56 +1,4 @@
-# Stage 1: Builder
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS builder
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV HF_HUB_DISABLE_SYMLINKS_WARNING=True
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install Python 3.12, pip, git, and other system dependencies
-# Install prerequisites for adding PPA and other tools
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    ca-certificates \
-    gnupg \
-    software-properties-common \
-    wget && \
-    # Add deadsnakes PPA
-    add-apt-repository -y ppa:deadsnakes/ppa && \
-    # Update package list again after adding PPA
-    apt-get update && \
-    # Install Python 3.12 and other dependencies
-    apt-get install -y --no-install-recommends \
-    python3.12 \
-    python3.12-dev \
-    git \
-    ffmpeg \
-    espeak-ng && \
-    # Install pip for Python 3.12 using get-pip.py
-    wget https://bootstrap.pypa.io/get-pip.py && \
-    python3.12 get-pip.py && \
-    rm get-pip.py && \
-    # Clean up unnecessary packages and apt cache
-    apt-get purge -y --auto-remove software-properties-common gnupg wget && \
-    apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/*
-
-# Make python3.12 the default python3 and pip
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
-    python3 -m pip install --upgrade --no-cache-dir pip
-
-# Upgrade pip, setuptools, wheel
-RUN pip install --upgrade --no-cache-dir pip setuptools wheel
-
-# Install PyTorch with CUDA support
-RUN pip install --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-
-# Copy requirements-prod.txt and install remaining dependencies
-# This excludes test dependencies to reduce image size
-COPY requirements-prod.txt .
-RUN pip install --no-cache-dir --ignore-installed blinker -r requirements-prod.txt
-
-# Stage 2: Final Runtime Image
-# Use the -runtime image which is smaller
+# Use a single stage build to avoid slow COPY operations of large PyTorch files
 FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 # Set environment variables
@@ -61,48 +9,72 @@ ENV TTS_PORT=9000
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 ENV DEBIAN_FRONTEND=noninteractive
-# Define Hugging Face cache directory
 ENV HF_HOME=/app/huggingface_cache
-# Add current directory to Python path
 ENV PYTHONPATH="/app:${PYTHONPATH}"
 
-# Install Python 3.12 runtime and essential system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends software-properties-common && \
-    add-apt-repository -y ppa:deadsnakes/ppa && \
+# Install Python, build dependencies, and runtime dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    python3.12 \
+    software-properties-common \
+    ca-certificates \
+    gnupg \
+    wget \
+    git \
+    build-essential \
     ffmpeg \
     espeak-ng && \
-    apt-get purge -y --auto-remove software-properties-common && \
+    # Add deadsnakes PPA for Python 3.12
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    # Install Python 3.12 and development headers
+    apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-dev \
+    python3.12-venv && \
+    # Install pip
+    wget https://bootstrap.pypa.io/get-pip.py && \
+    python3.12 get-pip.py && \
+    rm get-pip.py && \
+    # Set Python 3.12 as default
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    python3 -m pip install --upgrade pip setuptools wheel && \
+    # Cleanup initial setup tools
+    apt-get purge -y --auto-remove software-properties-common gnupg && \
     rm -rf /var/lib/apt/lists/*
 
-# Make python3.12 the default python3
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
+# Install PyTorch (Cached)
+# Installing this before other requirements allows caching this heavy layer
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --resume-retries 5 torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 
-# Copy installed Python packages and executables from the builder stage
-COPY --from=builder /usr/local/lib/python3.12/dist-packages /usr/local/lib/python3.12/dist-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-# Ensure the main python3.12 interpreter and its symlink are correctly in place if not already handled by apt install
-COPY --from=builder /usr/bin/python3.12 /usr/bin/python3.12
-COPY --from=builder /usr/bin/python3 /usr/bin/python3
+# Install production requirements
+COPY requirements-prod.txt .
+# We remove nvidia-*, torch, and torchaudio packages because they are already installed via the cached PyTorch layer
+RUN --mount=type=cache,target=/root/.cache/pip \
+    grep -vE "^nvidia-|^torch==|^torchaudio==" requirements-prod.txt > requirements-prod-filtered.txt && \
+    pip install --ignore-installed blinker -r requirements-prod-filtered.txt
+
+# Cleanup build dependencies to reduce image size
+# Note: We keep runtime dependencies like ffmpeg, espeak-ng, python3.12
+RUN apt-get purge -y git build-essential python3.12-dev && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy the rest of the application code into the container
-# This respects the .dockerignore file
+# Copy application code
 COPY . .
 
-# Copy the entrypoint script and make it executable
+# Setup entrypoint
 COPY entrypoint.sh .
 RUN chmod +x /app/entrypoint.sh
 
-# Make port available
+# Expose port
 EXPOSE ${TTS_PORT}
 
-# Set the entrypoint script
+# Set entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]
-
-# Default command
 CMD []
