@@ -3,7 +3,7 @@
 set -e
 
 # Python 3.12 should be the default python3 on the system PATH
-PYTHON_EXEC="python3"
+PYTHON_EXEC="python3.12"
 
 # Print the command we are about to execute (optional, for debugging)
 echo "Running command: ${PYTHON_EXEC} main.py --host ${TTS_HOST} --port ${TTS_PORT} $@"
